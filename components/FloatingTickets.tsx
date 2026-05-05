@@ -329,8 +329,8 @@ export function FloatingTicketsContainer() {
         @keyframes ticketFlight {
           0% {
             opacity: 0;
-            transform: translate3d(var(--enter-x), var(--start-y), -80px) rotateZ(var(--angle))
-              rotateY(-12deg) scale(var(--scale));
+            transform: translate3d(var(--enter-x), var(--start-y), 0) rotateZ(var(--angle))
+              scale(var(--scale));
           }
           14% {
             opacity: var(--opacity);
@@ -338,17 +338,17 @@ export function FloatingTicketsContainer() {
           42% {
             opacity: var(--opacity);
             transform: translate3d(var(--focus-x), var(--mid-y), 0) rotateZ(var(--angle))
-              rotateY(-6deg) scale(var(--scale));
+              scale(var(--scale));
           }
           72% {
             opacity: var(--opacity);
-            transform: translate3d(var(--leave-x), var(--end-y), 20px) rotateZ(var(--angle))
-              rotateY(2deg) scale(var(--scale));
+            transform: translate3d(var(--leave-x), var(--end-y), 0) rotateZ(var(--angle))
+              scale(var(--scale));
           }
           100% {
             opacity: 0;
-            transform: translate3d(var(--exit-x), calc(var(--end-y) + 16%), -60px)
-              rotateZ(var(--angle)) rotateY(8deg) scale(var(--scale));
+            transform: translate3d(var(--exit-x), calc(var(--end-y) + 16%), 0)
+              rotateZ(var(--angle)) scale(var(--scale));
           }
         }
 
