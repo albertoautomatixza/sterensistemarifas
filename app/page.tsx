@@ -27,7 +27,7 @@ export default function Home() {
     <div className="min-h-screen">
       <SiteHeader />
 
-      <section className="relative overflow-hidden">
+      <section className="relative overflow-clip">
         <div className="absolute inset-0 gradient-surface" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.25),transparent_55%)]" />
         <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 md:grid-cols-2 md:py-24">
@@ -59,7 +59,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="relative mt-2 min-h-[270px] overflow-visible sm:mt-4 sm:min-h-[330px] md:-mt-4 md:min-h-[410px] lg:-mt-10 lg:min-h-[460px]" aria-hidden>
+          <div className="relative mt-2 min-h-[270px] sm:mt-4 sm:min-h-[330px] md:-mt-4 md:min-h-[410px] lg:-mt-10 lg:min-h-[460px]" aria-hidden>
             <FloatingTicketsContainer />
           </div>
         </div>

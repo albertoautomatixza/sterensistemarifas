@@ -117,8 +117,8 @@ const AMBIENT_LIGHTS: FloatingLight[] = [
 
 export function FloatingTicketsContainer() {
   return (
-    <div className="floating-ticket-scene pointer-events-none absolute inset-0 flex items-start justify-center overflow-visible select-none">
-      <div className="ticket-stage relative w-full overflow-visible">
+    <div className="floating-ticket-scene pointer-events-none absolute inset-0 flex items-start justify-center select-none" style={{overflow: 'visible'}}>
+      <div className="ticket-stage relative w-full" style={{overflow: 'visible'}}>
         {AMBIENT_LIGHTS.map((light, index) => (
           <span
             key={index}
@@ -177,7 +177,7 @@ export function FloatingTicketsContainer() {
           --leave-x: -58%;
           --exit-x: -112%;
           width: min(116vw, 430px);
-          aspect-ratio: 3 / 2;
+          aspect-ratio: 2 / 1;
           opacity: 0;
           animation: ticketFlight 7.8s cubic-bezier(0.45, 0, 0.2, 1) var(--delay)
             infinite both;
@@ -192,9 +192,10 @@ export function FloatingTicketsContainer() {
         }
 
         .ticket-stage {
-          height: 260px;
+          height: 300px;
           max-width: 100%;
           perspective: 820px;
+          overflow: visible;
         }
 
         .ambient-spark {
@@ -391,7 +392,7 @@ export function FloatingTicketsContainer() {
 
         @media (min-width: 420px) {
           .ticket-stage {
-            height: 290px;
+            height: 320px;
           }
 
           .ticket-flight {
@@ -405,7 +406,7 @@ export function FloatingTicketsContainer() {
           }
 
           .ticket-stage {
-            height: 340px;
+            height: 360px;
             max-width: 580px;
             perspective: 980px;
           }
@@ -429,7 +430,7 @@ export function FloatingTicketsContainer() {
           }
 
           .ticket-stage {
-            height: 420px;
+            height: 460px;
             max-width: 680px;
             perspective: 1100px;
           }
