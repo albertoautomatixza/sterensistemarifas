@@ -177,7 +177,7 @@ export function FloatingTicketsContainer() {
           --leave-x: -58%;
           --exit-x: -112%;
           width: min(116vw, 430px);
-          aspect-ratio: 2 / 1;
+          aspect-ratio: 3 / 2;
           opacity: 0;
           animation: ticketFlight 7.8s cubic-bezier(0.45, 0, 0.2, 1) var(--delay)
             infinite both;
