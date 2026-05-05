@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'Rifa Trimestral | Participa con tu compra',
   description:
-    'Registra tu ticket o factura y participa por increibles premios en la rifa trimestral.',
+    'Registra tu ticket o factura y participa por increíbles premios en la rifa trimestral.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
