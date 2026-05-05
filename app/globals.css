@@ -1,0 +1,188 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 97%;
+    --foreground: 0 0% 29%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 20%;
+    --primary: 198 100% 44%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 205 100% 18%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 20% 94%;
+    --muted-foreground: 210 10% 40%;
+    --accent: 198 100% 94%;
+    --accent-foreground: 205 100% 18%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 20% 88%;
+    --input: 210 20% 90%;
+    --ring: 198 100% 44%;
+    --radius: 0.75rem;
+    --chart-1: 198 100% 44%;
+    --chart-2: 205 100% 18%;
+    --chart-3: 158 64% 40%;
+    --chart-4: 40 92% 55%;
+    --chart-5: 0 72% 51%;
+  }
+
+  * { @apply border-border; }
+  html, body { height: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
+    line-height: 1.5;
+  }
+  h1, h2, h3, h4 { line-height: 1.2; }
+}
+
+@layer utilities {
+  .gradient-surface {
+    background: linear-gradient(135deg, #003A5D 0%, #005A8A 55%, #00A3E0 100%);
+  }
+  .gradient-soft {
+    background: linear-gradient(180deg, #ffffff 0%, #F4F6F8 100%);
+  }
+  .ring-brand { box-shadow: 0 0 0 4px rgba(0, 163, 224, 0.18); }
+  .ticket-dashed {
+    background-image: radial-gradient(circle, #CBD5E1 1.5px, transparent 1.5px);
+    background-size: 10px 1px;
+    background-repeat: repeat-x;
+    background-position: center;
+  }
+}
+
+@layer components {
+  .floating-ticket {
+    @apply relative rounded-[16px] bg-white shadow-lg;
+    perspective: 1000px;
+  }
+
+  .ticket-notch {
+    position: relative;
+  }
+
+  .ticket-notch::before,
+  .ticket-notch::after {
+    content: '';
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .ticket-notch::before {
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .ticket-notch::after {
+    bottom: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  @keyframes float-slow-1 {
+    0% {
+      transform: translateY(0) translateX(0) rotateZ(0deg);
+      opacity: 0.6;
+    }
+    50% {
+      transform: translateY(-60px) translateX(8px) rotateZ(-2deg);
+      opacity: 0.85;
+    }
+    100% {
+      transform: translateY(-120px) translateX(0) rotateZ(0deg);
+      opacity: 0.6;
+    }
+  }
+
+  @keyframes float-slow-2 {
+    0% {
+      transform: translateY(40px) translateX(-4px) rotateZ(1.5deg);
+      opacity: 0.5;
+    }
+    50% {
+      transform: translateY(-40px) translateX(4px) rotateZ(1.5deg);
+      opacity: 0.8;
+    }
+    100% {
+      transform: translateY(-100px) translateX(-4px) rotateZ(1.5deg);
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes float-slow-3 {
+    0% {
+      transform: translateY(80px) translateX(6px) rotateZ(-1deg);
+      opacity: 0.55;
+    }
+    50% {
+      transform: translateY(-20px) translateX(-6px) rotateZ(-1deg);
+      opacity: 0.9;
+    }
+    100% {
+      transform: translateY(-80px) translateX(6px) rotateZ(-1deg);
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes float-slow-4 {
+    0% {
+      transform: translateY(20px) translateX(-8px) rotateZ(2deg);
+      opacity: 0.5;
+    }
+    50% {
+      transform: translateY(-60px) translateX(0px) rotateZ(2deg);
+      opacity: 0.85;
+    }
+    100% {
+      transform: translateY(-140px) translateX(-8px) rotateZ(2deg);
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes float-slow-5 {
+    0% {
+      transform: translateY(60px) translateX(4px) rotateZ(-1.5deg);
+      opacity: 0.6;
+    }
+    50% {
+      transform: translateY(-30px) translateX(-4px) rotateZ(-1.5deg);
+      opacity: 0.8;
+    }
+    100% {
+      transform: translateY(-90px) translateX(4px) rotateZ(-1.5deg);
+      opacity: 0.6;
+    }
+  }
+
+  @keyframes float-slow-6 {
+    0% {
+      transform: translateY(0px) translateX(8px) rotateZ(1deg);
+      opacity: 0.55;
+    }
+    50% {
+      transform: translateY(-70px) translateX(-2px) rotateZ(1deg);
+      opacity: 0.82;
+    }
+    100% {
+      transform: translateY(-110px) translateX(8px) rotateZ(1deg);
+      opacity: 0.55;
+    }
+  }
+
+  .animate-float-1 { animation: float-slow-1 7s ease-in-out infinite; }
+  .animate-float-2 { animation: float-slow-2 8.5s ease-in-out infinite; }
+  .animate-float-3 { animation: float-slow-3 6.8s ease-in-out infinite; }
+  .animate-float-4 { animation: float-slow-4 9s ease-in-out infinite; }
+  .animate-float-5 { animation: float-slow-5 7.5s ease-in-out infinite; }
+  .animate-float-6 { animation: float-slow-6 8s ease-in-out infinite; }
+}
