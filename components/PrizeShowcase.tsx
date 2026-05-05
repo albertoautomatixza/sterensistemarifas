@@ -1,8 +1,9 @@
 'use client';
 
 import type { CSSProperties } from 'react';
+import prizeImage from '@/public/images/prize-pack.png';
 
-const PRIZE_IMAGE = '/images/prize-pack.png';
+const PRIZE_IMAGE = prizeImage.src;
 
 type Light = {
   x: string;
@@ -92,6 +93,10 @@ export function PrizeShowcase() {
         src={PRIZE_IMAGE}
         alt="Premios tecnológicos Steren"
         className="relative z-[1] block w-full max-w-none object-contain drop-shadow-[0_28px_34px_rgba(0,15,35,0.42)]"
+        width={prizeImage.width}
+        height={prizeImage.height}
+        loading="lazy"
+        decoding="async"
         draggable={false}
       />
       <div className="prize-bottom-glow" />

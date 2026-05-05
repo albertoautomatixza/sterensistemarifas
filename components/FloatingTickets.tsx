@@ -1,8 +1,9 @@
 'use client';
 
 import type { CSSProperties } from 'react';
+import ticketImage from '@/public/images/participation-ticket.png';
 
-const TICKET_IMAGE = '/images/participation-ticket.png';
+const TICKET_IMAGE = ticketImage.src;
 
 type TicketFlight = {
   delay: string;
@@ -167,193 +168,15 @@ export function FloatingTicketsContainer() {
               src={TICKET_IMAGE}
               alt=""
               className="h-full w-full object-contain"
+              width={ticketImage.width}
+              height={ticketImage.height}
+              loading="eager"
+              decoding="async"
               draggable={false}
             />
           </div>
         ))}
       </div>
-
-      <style jsx>{`
-        .floating-ticket-scene {
-          perspective: 1400px;
-        }
-
-        .ticket-stage {
-          min-height: 420px;
-          transform-style: preserve-3d;
-        }
-
-        .ticket-flight {
-          width: min(116vw, 430px);
-          aspect-ratio: 3 / 2;
-          --enter-x: 108%;
-          --focus-x: 18%;
-          --leave-x: -46%;
-          --exit-x: -120%;
-          opacity: 0;
-          transform-style: preserve-3d;
-          animation: ticketFlight 11s cubic-bezier(0.42, 0, 0.22, 1) var(--delay)
-            infinite both;
-          filter: drop-shadow(0 26px 34px rgba(1, 19, 48, 0.38))
-            drop-shadow(0 0 22px rgba(0, 163, 224, 0.28));
-          will-change: transform, opacity;
-        }
-
-        .ticket-flight img {
-          pointer-events: none;
-        }
-
-        .ticket-comet,
-        .ticket-spark {
-          position: absolute;
-          pointer-events: none;
-          border-radius: 9999px;
-          filter: blur(6px);
-          opacity: 0;
-          animation: cometPulse 11s ease-in-out var(--delay) infinite both;
-        }
-
-        .ticket-comet-a {
-          top: 42%;
-          left: -62%;
-          width: 70%;
-          height: 18%;
-          background: linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0) 0%,
-            rgba(125, 211, 252, 0.7) 55%,
-            rgba(255, 255, 255, 0.95) 100%
-          );
-        }
-
-        .ticket-comet-b {
-          top: 58%;
-          left: -40%;
-          width: 50%;
-          height: 10%;
-          background: linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0) 0%,
-            rgba(14, 165, 233, 0.5) 55%,
-            rgba(191, 219, 254, 0.85) 100%
-          );
-        }
-
-        .ticket-spark-a {
-          top: 20%;
-          left: -8%;
-          width: 14%;
-          height: 14%;
-          background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(125, 211, 252, 0));
-        }
-
-        .ticket-spark-b {
-          top: 68%;
-          left: 6%;
-          width: 9%;
-          height: 9%;
-          background: radial-gradient(circle, rgba(186, 230, 253, 0.9), rgba(125, 211, 252, 0));
-        }
-
-        .ambient-spark {
-          position: absolute;
-          top: var(--spark-y);
-          left: var(--spark-x);
-          width: var(--spark-size);
-          height: var(--spark-size);
-          transform: translate(-50%, -50%) rotate(var(--spark-rotate));
-          opacity: 0;
-          animation: sparkBreathe var(--spark-duration) ease-in-out var(--spark-delay) infinite both;
-          pointer-events: none;
-        }
-
-        .spark-core {
-          position: absolute;
-          inset: 0;
-          background:
-            radial-gradient(
-              circle,
-              rgba(255, 255, 255, 0.95) 0%,
-              rgba(186, 230, 253, 0.6) 38%,
-              rgba(14, 165, 233, 0) 72%
-            );
-          filter: blur(1px);
-        }
-
-        .spark-core::before,
-        .spark-core::after {
-          content: '';
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          background: linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0) 0%,
-            rgba(255, 255, 255, 0.95) 50%,
-            rgba(255, 255, 255, 0) 100%
-          );
-        }
-
-        .spark-core::before {
-          width: 120%;
-          height: 4%;
-        }
-
-        .spark-core::after {
-          width: 4%;
-          height: 120%;
-        }
-
-        @keyframes ticketFlight {
-          0% {
-            opacity: 0;
-            transform: translate3d(var(--enter-x), var(--start-y), -80px) rotateZ(var(--angle))
-              rotateY(-12deg) scale(var(--scale));
-          }
-          14% {
-            opacity: var(--opacity);
-          }
-          42% {
-            opacity: var(--opacity);
-            transform: translate3d(var(--focus-x), var(--mid-y), 0) rotateZ(var(--angle))
-              rotateY(-6deg) scale(var(--scale));
-          }
-          72% {
-            opacity: var(--opacity);
-            transform: translate3d(var(--leave-x), var(--end-y), 20px) rotateZ(var(--angle))
-              rotateY(2deg) scale(var(--scale));
-          }
-          100% {
-            opacity: 0;
-            transform: translate3d(var(--exit-x), calc(var(--end-y) + 16%), -60px)
-              rotateZ(var(--angle)) rotateY(8deg) scale(var(--scale));
-          }
-        }
-
-        @keyframes cometPulse {
-          0%,
-          100% {
-            opacity: 0;
-          }
-          20%,
-          72% {
-            opacity: 0.9;
-          }
-        }
-
-        @keyframes sparkBreathe {
-          0%,
-          100% {
-            opacity: 0;
-            transform: translate(-50%, -50%) rotate(var(--spark-rotate)) scale(0.6);
-          }
-          50% {
-            opacity: var(--spark-opacity);
-            transform: translate(-50%, -50%) rotate(var(--spark-rotate)) scale(1);
-          }
-        }
-      `}</style>
     </div>
   );
 }
