@@ -1,15 +1,23 @@
 import Link from 'next/link';
-import {
-  ShieldCheck,
-  QrCode,
-  Sparkles,
-  Ticket,
-  ArrowRight,
-  ReceiptText,
-  Mail,
-  Trophy,
-  CheckCircle2,
-} from 'lucide-react';
+import { ShieldCheck, QrCode, Sparkles, Ticket, ArrowRight, ReceiptText, Mail, Trophy, CircleCheck as CheckCircle2 } from 'lucide-react';
+
+function EntradasIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 512 512" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M448.678,128.219l-10.607,10.608c-8.667,8.667-20.191,13.44-32.449,13.44c-12.258,0-23.78-4.773-32.448-13.44
+        c-8.667-8.667-13.44-20.191-13.44-32.448s4.773-23.781,13.44-32.449l10.608-10.608L320.459,0L0,320.459l63.322,63.322
+        l10.608-10.608c8.667-8.667,20.191-13.44,32.449-13.44c12.258,0,23.78,4.773,32.448,13.44c8.667,8.667,13.44,20.191,13.44,32.448
+        s-4.773,23.781-13.44,32.449l-10.608,10.608L191.541,512L512,191.541L448.678,128.219z M169.61,447.636
+        c8.237-12.343,12.662-26.839,12.662-42.015c0-20.272-7.894-39.33-22.229-53.664c-14.334-14.335-33.393-22.229-53.664-22.229
+        c-15.176,0-29.672,4.425-42.015,12.662l-21.932-21.931L320.459,42.432l21.931,21.932c-8.237,12.343-12.662,26.839-12.662,42.015
+        c0,20.272,7.894,39.33,22.229,53.664c14.334,14.335,33.393,22.229,53.664,22.229c15.176,0,29.672-4.425,42.015-12.662
+        l21.932,21.931L191.541,469.568L169.61,447.636z"/>
+      <rect x="284.001" y="197.94" transform="matrix(0.7071 -0.7071 0.7071 0.7071 -63.0395 273.8137)" width="30.004" height="30.124"/>
+      <rect x="241.404" y="155.325" transform="matrix(0.7071 -0.7071 0.7071 0.7071 -45.3819 231.2119)" width="30.004" height="30.124"/>
+      <rect x="326.607" y="240.541" transform="matrix(0.7071 -0.7071 0.7071 0.7071 -80.684 316.4184)" width="30.004" height="30.124"/>
+    </svg>
+  );
+}
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { FloatingTicketsContainer } from '@/components/FloatingTickets';
@@ -66,7 +74,7 @@ export default function Home() {
         <div className="grid gap-6 md:grid-cols-4">
           <Step n={1} icon={QrCode} title="Escanea el QR en tienda" desc="Acceso único desde el punto de venta participante." />
           <Step n={2} icon={ReceiptText} title="Registra tu ticket o factura" desc="Validación oficial contra el sistema de ventas." />
-          <Step n={3} icon={Ticket} title="Recibe tu número único" desc="Generado con control transaccional y auditable." />
+          <Step n={3} icon={EntradasIcon} title="Recibe tu número único" desc="Generado con control transaccional y auditable." />
           <Step n={4} icon={Mail} title="Confirmación por correo" desc="Boleto virtual enviado a tu correo al instante." />
         </div>
       </section>
