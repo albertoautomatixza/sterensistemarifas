@@ -21,6 +21,7 @@ function EntradasIcon({ className }: { className?: string }) {
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { FloatingTicketsContainer } from '@/components/FloatingTickets';
+import { PrizeShowcase } from '@/components/PrizeShowcase';
 
 export default function Home() {
   return (
@@ -89,6 +90,7 @@ export default function Home() {
               <div className="mt-6 text-sm opacity-90">
                 Valuado en <span className="font-semibold">$50,000 MXN</span>, más 10 premios secundarios.
               </div>
+              <PrizeShowcase />
             </div>
             <div className="p-10 md:col-span-3">
               <div className="text-xs font-semibold uppercase tracking-wider text-[#00A3E0]">Mecánica resumida</div>
