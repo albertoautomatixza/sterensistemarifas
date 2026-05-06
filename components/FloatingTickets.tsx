@@ -26,93 +26,151 @@ type FloatingLight = {
   rotate: string;
 };
 
+type SpeedLine = {
+  x: string;
+  y: string;
+  width: string;
+  delay: string;
+  duration: string;
+  opacity: string;
+  rotate: string;
+};
+
 const TICKETS: TicketFlight[] = [
   {
     delay: '0s',
-    startY: '-4%',
-    midY: '10%',
-    endY: '26%',
+    startY: '-34%',
+    midY: '-18%',
+    endY: '-2%',
     angle: '-7deg',
-    scale: '0.78',
+    scale: '0.86',
     opacity: '1',
     z: 3,
   },
   {
-    delay: '-2.6s',
-    startY: '8%',
-    midY: '22%',
-    endY: '38%',
+    delay: '3s',
+    startY: '7%',
+    midY: '20%',
+    endY: '34%',
     angle: '-5deg',
     scale: '0.72',
     opacity: '0.86',
     z: 2,
   },
   {
-    delay: '-5.2s',
-    startY: '-16%',
-    midY: '0%',
-    endY: '18%',
+    delay: '6s',
+    startY: '38%',
+    midY: '52%',
+    endY: '66%',
     angle: '-9deg',
-    scale: '0.66',
-    opacity: '0.72',
+    scale: '0.58',
+    opacity: '0.68',
     z: 1,
   },
 ];
 
 const AMBIENT_LIGHTS: FloatingLight[] = [
   {
-    x: '6%',
-    y: '7%',
-    size: '74px',
-    delay: '-0.8s',
-    duration: '5.2s',
-    opacity: '0.88',
-    rotate: '-8deg',
-  },
-  {
-    x: '42%',
-    y: '13%',
-    size: '52px',
-    delay: '-4s',
-    duration: '4.8s',
-    opacity: '0.72',
-    rotate: '18deg',
-  },
-  {
-    x: '78%',
-    y: '6%',
+    x: '58%',
+    y: '9%',
     size: '62px',
-    delay: '-2.4s',
-    duration: '4.4s',
-    opacity: '0.8',
-    rotate: '12deg',
-  },
-  {
-    x: '18%',
-    y: '68%',
-    size: '58px',
-    delay: '-3.1s',
-    duration: '5.6s',
-    opacity: '0.7',
-    rotate: '-22deg',
-  },
-  {
-    x: '64%',
-    y: '72%',
-    size: '68px',
-    delay: '-1.6s',
-    duration: '5s',
-    opacity: '0.82',
-    rotate: '6deg',
+    delay: '-0.8s',
+    duration: '5.8s',
+    opacity: '0.58',
+    rotate: '-4deg',
   },
   {
     x: '88%',
-    y: '48%',
-    size: '46px',
+    y: '16%',
+    size: '116px',
+    delay: '-4s',
+    duration: '6.4s',
+    opacity: '0.62',
+    rotate: '-5deg',
+  },
+  {
+    x: '78%',
+    y: '39%',
+    size: '76px',
+    delay: '-2.4s',
+    duration: '5.6s',
+    opacity: '0.58',
+    rotate: '-3deg',
+  },
+  {
+    x: '63%',
+    y: '74%',
+    size: '94px',
+    delay: '-3.1s',
+    duration: '6.8s',
+    opacity: '0.52',
+    rotate: '-4deg',
+  },
+  {
+    x: '91%',
+    y: '73%',
+    size: '140px',
+    delay: '-1.6s',
+    duration: '6.1s',
+    opacity: '0.56',
+    rotate: '-5deg',
+  },
+  {
+    x: '52%',
+    y: '56%',
+    size: '52px',
     delay: '-2s',
+    duration: '5.2s',
+    opacity: '0.42',
+    rotate: '-3deg',
+  },
+];
+
+const SPEED_LINES: SpeedLine[] = [
+  {
+    x: '86%',
+    y: '19%',
+    width: '210px',
+    delay: '0.5s',
+    duration: '3.8s',
+    opacity: '0.62',
+    rotate: '-4deg',
+  },
+  {
+    x: '76%',
+    y: '32%',
+    width: '155px',
+    delay: '1.9s',
     duration: '4.2s',
-    opacity: '0.65',
-    rotate: '-14deg',
+    opacity: '0.46',
+    rotate: '-4deg',
+  },
+  {
+    x: '91%',
+    y: '49%',
+    width: '124px',
+    delay: '3.1s',
+    duration: '3.6s',
+    opacity: '0.5',
+    rotate: '-3deg',
+  },
+  {
+    x: '80%',
+    y: '69%',
+    width: '180px',
+    delay: '4.6s',
+    duration: '4.4s',
+    opacity: '0.48',
+    rotate: '-5deg',
+  },
+  {
+    x: '66%',
+    y: '82%',
+    width: '112px',
+    delay: '6.5s',
+    duration: '3.9s',
+    opacity: '0.38',
+    rotate: '-4deg',
   },
 ];
 
@@ -123,6 +181,24 @@ export function FloatingTicketsContainer() {
       style={{ overflow: 'visible' }}
     >
       <div className="ticket-stage relative w-full" style={{ overflow: 'visible' }}>
+        {SPEED_LINES.map((line, index) => (
+          <span
+            key={`speed-${index}`}
+            className="hero-speed-line"
+            style={
+              {
+                '--speed-x': line.x,
+                '--speed-y': line.y,
+                '--speed-width': line.width,
+                '--speed-delay': line.delay,
+                '--speed-duration': line.duration,
+                '--speed-opacity': line.opacity,
+                '--speed-rotate': line.rotate,
+              } as CSSProperties
+            }
+          />
+        ))}
+
         {AMBIENT_LIGHTS.map((light, index) => (
           <span
             key={index}

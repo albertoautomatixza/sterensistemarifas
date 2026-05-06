@@ -200,13 +200,13 @@
   .ticket-flight {
     width: min(116vw, 430px);
     aspect-ratio: 3 / 2;
-    --enter-x: 108%;
+    --enter-x: 112%;
     --focus-x: 18%;
-    --leave-x: -46%;
-    --exit-x: -120%;
+    --leave-x: -50%;
+    --exit-x: -122%;
     opacity: 0;
     transform-style: preserve-3d;
-    animation: ticketFlight 11s cubic-bezier(0.42, 0, 0.22, 1) var(--delay) infinite both;
+    animation: ticketFlight 9s linear var(--delay) infinite both;
     filter: drop-shadow(0 26px 34px rgba(1, 19, 48, 0.38))
       drop-shadow(0 0 22px rgba(0, 163, 224, 0.28));
     will-change: transform, opacity;
@@ -221,51 +221,77 @@
     position: absolute;
     pointer-events: none;
     border-radius: 9999px;
-    filter: blur(6px);
+    filter: blur(0.35px);
     opacity: 0;
-    animation: cometPulse 11s ease-in-out var(--delay) infinite both;
+    animation: cometPulse 9s linear var(--delay) infinite both;
+    mix-blend-mode: screen;
   }
 
   .ticket-comet-a {
-    top: 42%;
-    left: -62%;
-    width: 70%;
-    height: 18%;
+    top: 34%;
+    left: -30%;
+    width: 48%;
+    height: 2px;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0) 0%,
-      rgba(125, 211, 252, 0.7) 55%,
-      rgba(255, 255, 255, 0.95) 100%
+      rgba(190, 239, 255, 0.55) 42%,
+      rgba(255, 255, 255, 0.9) 58%,
+      rgba(0, 188, 255, 0) 100%
     );
+    box-shadow: 0 0 7px rgba(112, 214, 255, 0.42);
   }
 
   .ticket-comet-b {
-    top: 58%;
-    left: -40%;
-    width: 50%;
-    height: 10%;
+    top: 50%;
+    left: -22%;
+    width: 36%;
+    height: 1px;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0) 0%,
-      rgba(14, 165, 233, 0.5) 55%,
-      rgba(191, 219, 254, 0.85) 100%
+      rgba(148, 220, 255, 0.48) 50%,
+      rgba(255, 255, 255, 0.75) 62%,
+      rgba(255, 255, 255, 0) 100%
     );
+    box-shadow: 0 0 5px rgba(114, 215, 255, 0.36);
   }
 
   .ticket-spark-a {
-    top: 20%;
-    left: -8%;
-    width: 14%;
-    height: 14%;
-    background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(125, 211, 252, 0));
+    top: 27%;
+    left: 0%;
+    width: 28px;
+    height: 28px;
   }
 
   .ticket-spark-b {
-    top: 68%;
-    left: 6%;
-    width: 9%;
-    height: 9%;
-    background: radial-gradient(circle, rgba(186, 230, 253, 0.9), rgba(125, 211, 252, 0));
+    top: 62%;
+    left: 8%;
+    width: 18px;
+    height: 18px;
+  }
+
+  .ticket-spark::before,
+  .ticket-spark::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 9999px;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.88), transparent);
+    box-shadow: 0 0 8px rgba(181, 234, 255, 0.56);
+  }
+
+  .ticket-spark::before {
+    width: 100%;
+    height: 1px;
+  }
+
+  .ticket-spark::after {
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.82), transparent);
   }
 
   .ambient-spark {
@@ -273,24 +299,67 @@
     top: var(--spark-y);
     left: var(--spark-x);
     width: var(--spark-size);
-    height: var(--spark-size);
+    height: 18px;
     transform: translate(-50%, -50%) rotate(var(--spark-rotate));
     opacity: 0;
     animation: sparkBreathe var(--spark-duration) ease-in-out var(--spark-delay) infinite both;
     pointer-events: none;
+    mix-blend-mode: screen;
+  }
+
+  .hero-speed-line {
+    position: absolute;
+    left: var(--speed-x);
+    top: var(--speed-y);
+    width: var(--speed-width);
+    height: 1px;
+    border-radius: 9999px;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--speed-rotate));
+    transform-origin: center;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(166, 232, 255, 0.18) 22%,
+      rgba(255, 255, 255, 0.72) 56%,
+      rgba(0, 190, 255, 0.18) 78%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    box-shadow: 0 0 6px rgba(123, 217, 255, 0.3);
+    mix-blend-mode: screen;
+    animation: heroSpeedLine var(--speed-duration) ease-in-out var(--speed-delay) infinite both;
+  }
+
+  .hero-speed-line::after {
+    content: '';
+    position: absolute;
+    right: 20%;
+    top: 50%;
+    width: 3px;
+    height: 3px;
+    border-radius: 9999px;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 7px rgba(255, 255, 255, 0.76), 0 0 12px rgba(92, 210, 255, 0.46);
   }
 
   .spark-core {
     position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(
-        circle,
-        rgba(255, 255, 255, 0.95) 0%,
-        rgba(186, 230, 253, 0.6) 38%,
-        rgba(14, 165, 233, 0) 72%
-      );
-    filter: blur(1px);
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    transform: translateY(-50%);
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(145, 224, 255, 0.18) 18%,
+      rgba(255, 255, 255, 0.84) 52%,
+      rgba(0, 194, 255, 0.22) 74%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    box-shadow: 0 0 5px rgba(128, 219, 255, 0.38);
   }
 
   .spark-core::before,
@@ -303,39 +372,46 @@
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0) 0%,
-      rgba(255, 255, 255, 0.95) 50%,
+      rgba(255, 255, 255, 0.82) 50%,
       rgba(255, 255, 255, 0) 100%
     );
+    box-shadow: 0 0 8px rgba(198, 241, 255, 0.48);
   }
 
   .spark-core::before {
-    width: 120%;
-    height: 4%;
+    width: 30px;
+    height: 1px;
   }
 
   .spark-core::after {
-    width: 4%;
-    height: 120%;
+    width: 1px;
+    height: 30px;
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.72), transparent);
   }
 
   @keyframes ticketFlight {
     0% {
       opacity: 0;
-      transform: translate3d(var(--enter-x), var(--start-y), -80px) rotateZ(var(--angle))
+      transform: translate3d(var(--enter-x), var(--start-y), -90px) rotateZ(var(--angle))
         rotateY(-12deg) scale(var(--scale));
     }
-    14% {
+    6% {
       opacity: var(--opacity);
     }
-    42% {
+    21% {
       opacity: var(--opacity);
       transform: translate3d(var(--focus-x), var(--mid-y), 0) rotateZ(var(--angle))
         rotateY(-6deg) scale(var(--scale));
     }
-    72% {
+    36% {
       opacity: var(--opacity);
       transform: translate3d(var(--leave-x), var(--end-y), 20px) rotateZ(var(--angle))
         rotateY(2deg) scale(var(--scale));
+    }
+    45% {
+      opacity: 0;
+      transform: translate3d(var(--exit-x), calc(var(--end-y) + 16%), -60px)
+        rotateZ(var(--angle)) rotateY(8deg) scale(var(--scale));
     }
     100% {
       opacity: 0;
@@ -348,10 +424,25 @@
     0%,
     100% {
       opacity: 0;
+      transform: translateX(-12px) scaleX(0.74);
     }
-    20%,
-    72% {
-      opacity: 0.9;
+    8%,
+    42% {
+      opacity: 0.58;
+      transform: translateX(0) scaleX(1);
+    }
+  }
+
+  @keyframes heroSpeedLine {
+    0%,
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) rotate(var(--speed-rotate)) translateX(42px) scaleX(0.72);
+    }
+    32%,
+    58% {
+      opacity: var(--speed-opacity);
+      transform: translate(-50%, -50%) rotate(var(--speed-rotate)) translateX(-10px) scaleX(1);
     }
   }
 
@@ -359,11 +450,11 @@
     0%,
     100% {
       opacity: 0;
-      transform: translate(-50%, -50%) rotate(var(--spark-rotate)) scale(0.6);
+      transform: translate(-50%, -50%) rotate(var(--spark-rotate)) translateX(-22px) scaleX(0.72);
     }
     50% {
       opacity: var(--spark-opacity);
-      transform: translate(-50%, -50%) rotate(var(--spark-rotate)) scale(1);
+      transform: translate(-50%, -50%) rotate(var(--spark-rotate)) translateX(8px) scaleX(1);
     }
   }
 }
