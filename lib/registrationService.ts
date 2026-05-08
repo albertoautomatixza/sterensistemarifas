@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { RegistrationPayload } from './validators';
 import type { RegistrationResult } from './types';
 import { validateSaleWithSteren } from './sterenClient';
+import { registerParticipationLocal, shouldUseLocalRegistrationStore } from './localRegistrationStore';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey =
@@ -54,6 +55,10 @@ export async function registerParticipation(
   input: RegistrationPayload,
   ctx: Ctx
 ): Promise<RegistrationResult> {
+  if (shouldUseLocalRegistrationStore()) {
+    return registerParticipationLocal(input);
+  }
+
   const sb = serverClient();
 
   const { data: raffle, error: raffleErr } = await sb

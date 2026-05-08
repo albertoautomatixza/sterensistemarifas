@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,11 +10,13 @@ import {
   Phone,
   Mail,
   Calendar,
+  Camera,
   ReceiptText,
   Loader2,
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
+  X,
 } from 'lucide-react';
 
 type Step = 0 | 1 | 2;
@@ -24,6 +26,7 @@ export function RegistrationWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [showTerms, setShowTerms] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const router = useRouter();
 
   const form = useForm<RegistrationPayload>({
@@ -55,6 +58,16 @@ export function RegistrationWizard() {
 
   function back() {
     if (step > 0) setStep((step - 1) as Step);
+  }
+
+  function handleScanResult(rawValue: string) {
+    const identifier = extractSaleIdentifier(rawValue);
+    setValue('sale_identifier', identifier, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+    setShowScanner(false);
   }
 
   const onSubmit = handleSubmit(async (values) => {
@@ -175,9 +188,7 @@ export function RegistrationWizard() {
                 })}
               </div>
             </div>
-            <Field
-              label="Identificador del ticket o factura"
-              icon={ReceiptText}
+            <SaleIdentifierCapture
               error={formState.errors.sale_identifier?.message}
               input={
                 <input
@@ -185,9 +196,10 @@ export function RegistrationWizard() {
                   autoComplete="off"
                   placeholder="Ej. TKT-0045123 o FA-77821"
                   {...register('sale_identifier')}
-                  className="input font-mono uppercase tracking-wider"
+                  className="input pr-4 font-mono uppercase tracking-wider"
                 />
               }
+              onScan={() => setShowScanner(true)}
             />
             <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
               Puedes encontrar este identificador impreso en tu ticket o en el encabezado de tu
@@ -291,6 +303,7 @@ export function RegistrationWizard() {
       </form>
 
       {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
+      {showScanner && <QrScannerModal onClose={() => setShowScanner(false)} onResult={handleScanResult} />}
 
       <style jsx global>{`
         .input {
@@ -311,6 +324,40 @@ export function RegistrationWizard() {
       `}</style>
     </div>
   );
+}
+
+function extractSaleIdentifier(rawValue: string) {
+  const trimmed = rawValue.trim();
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    const value =
+      parsed?.sale_identifier ??
+      parsed?.ticket ??
+      parsed?.factura ??
+      parsed?.folio ??
+      parsed?.codigo ??
+      parsed?.code;
+    if (typeof value === 'string' && value.trim()) return value.trim().toUpperCase();
+  } catch {
+    // QR payloads may be plain text or URLs.
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const value =
+      url.searchParams.get('sale_identifier') ??
+      url.searchParams.get('ticket') ??
+      url.searchParams.get('factura') ??
+      url.searchParams.get('folio') ??
+      url.searchParams.get('codigo') ??
+      url.searchParams.get('code');
+    if (value?.trim()) return value.trim().toUpperCase();
+  } catch {
+    // Plain codes are valid too.
+  }
+
+  return trimmed.toUpperCase();
 }
 
 function Stepper({ step }: { step: Step }) {
@@ -370,6 +417,156 @@ function Field({
       </div>
       {error && <div className="mt-1 text-xs text-red-600">{error}</div>}
     </label>
+  );
+}
+
+function SaleIdentifierCapture({
+  error,
+  input,
+  onScan,
+}: {
+  error?: string;
+  input: React.ReactNode;
+  onScan: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="text-sm font-semibold text-slate-700">Código de ticket o factura</div>
+      <div className="mt-3 flex items-end gap-3">
+        <div className="relative min-w-0 flex-1">
+          <ReceiptText className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          {input}
+        </div>
+        <button
+          type="button"
+          onClick={onScan}
+          aria-label="Escanear código QR"
+          title="Escanear código QR"
+          className="inline-flex h-[46px] w-[58px] flex-none items-center justify-center rounded-xl bg-[#003A5D] text-white shadow-sm transition hover:bg-[#002a45] focus:outline-none focus:ring-4 focus:ring-[#003A5D]/25 sm:h-[50px] sm:w-[68px]"
+        >
+          <Camera className="h-6 w-6" />
+        </button>
+      </div>
+      {error ? (
+        <div className="mt-2 text-xs text-red-600">{error}</div>
+      ) : (
+        <div className="mt-2 text-xs text-slate-500">
+          Escríbelo manualmente o toca la cámara para leer el QR del comprobante.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QrScannerModal({
+  onClose,
+  onResult,
+}: {
+  onClose: () => void;
+  onResult: (value: string) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const [message, setMessage] = useState('Permite el acceso a la cámara y apunta al código QR.');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function startScanner() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setMessage('Este navegador no permite abrir la cámara. Ingresa el código manualmente.');
+          return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) return;
+
+        video.srcObject = stream;
+        await video.play();
+
+        const BarcodeDetectorCtor = (window as any).BarcodeDetector;
+        if (!BarcodeDetectorCtor) {
+          setMessage('La cámara está activa. Si tu navegador no lee el QR, escribe el código manualmente.');
+          return;
+        }
+
+        const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] });
+        const scan = async () => {
+          if (cancelled || !videoRef.current) return;
+          try {
+            const codes = await detector.detect(videoRef.current);
+            const value = codes?.[0]?.rawValue;
+            if (value) {
+              onResult(value);
+              return;
+            }
+          } catch {
+            setMessage('No se pudo leer el QR. Acerca el código o mejora la iluminación.');
+          }
+          frameRef.current = requestAnimationFrame(scan);
+        };
+
+        frameRef.current = requestAnimationFrame(scan);
+      } catch {
+        setMessage('No fue posible abrir la cámara. Revisa los permisos o ingresa el código manualmente.');
+      }
+    }
+
+    startScanner();
+
+    return () => {
+      cancelled = true;
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, [onResult]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#001C2E]/70 p-3 backdrop-blur-sm md:items-center">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 p-4">
+          <div>
+            <div className="font-semibold text-[#003A5D]">Escanear QR</div>
+            <div className="text-xs text-slate-500">Ticket o factura</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar escáner"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-4">
+          <div className="relative aspect-[3/4] overflow-hidden rounded-2xl bg-slate-950">
+            <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
+            <div className="pointer-events-none absolute inset-8 rounded-2xl border-2 border-white/80 shadow-[0_0_0_999px_rgba(0,0,0,0.28)]" />
+            <div className="pointer-events-none absolute left-10 right-10 top-1/2 h-px bg-[#39B54A] shadow-[0_0_18px_rgba(57,181,74,0.95)]" />
+          </div>
+          <p className="mt-3 text-center text-sm text-slate-600">{message}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-4 w-full rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Ingresar manualmente
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { rateLimit } from '@/lib/rateLimit';
+import { lookupLocalParticipation, shouldUseLocalRegistrationStore } from '@/lib/localRegistrationStore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,6 +22,11 @@ export async function GET(req: NextRequest) {
       { ok: false, message: 'Folio inválido.' },
       { status: 400 }
     );
+  }
+
+  if (shouldUseLocalRegistrationStore()) {
+    const result = await lookupLocalParticipation(folio);
+    return NextResponse.json(result, { status: result.ok ? 200 : 404 });
   }
 
   const sb = createClient(
