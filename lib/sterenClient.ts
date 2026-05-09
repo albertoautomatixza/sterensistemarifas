@@ -16,10 +16,34 @@ export type SterenValidationResult =
 export type SterenError =
   | { kind: 'timeout' }
   | { kind: 'network' }
+  | { kind: 'missing_config' }
+  | { kind: 'unsafe_config' }
   | { kind: 'upstream_error'; status: number };
 
 const STEREN_API_URL = process.env.STEREN_API_URL;
 const STEREN_API_KEY = process.env.STEREN_API_KEY;
+const STEREN_TIMEOUT_MS = Number(process.env.STEREN_TIMEOUT_MS ?? 5000);
+
+function isLocalPreviewMode() {
+  return process.env.LOCAL_REGISTRATION_STORE === 'true' || !process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
+function resolveSterenValidateUrl(): string | SterenError {
+  if (!STEREN_API_URL || !STEREN_API_KEY) {
+    return isLocalPreviewMode() ? '' : { kind: 'missing_config' };
+  }
+
+  try {
+    const base = new URL(STEREN_API_URL);
+    const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(base.hostname);
+    if (process.env.NODE_ENV === 'production' && base.protocol !== 'https:' && !isLocalHost) {
+      return { kind: 'unsafe_config' };
+    }
+    return `${base.toString().replace(/\/+$/, '')}/validate`;
+  } catch {
+    return { kind: 'unsafe_config' };
+  }
+}
 
 async function callWithTimeout(
   url: string,
@@ -39,9 +63,11 @@ export async function validateSaleWithSteren(
   saleIdentifier: string,
   saleType: 'ticket' | 'factura'
 ): Promise<SterenValidationResult | SterenError> {
-  if (!STEREN_API_URL || !STEREN_API_KEY) {
+  const validateUrl = resolveSterenValidateUrl();
+  if (validateUrl === '') {
     return simulateValidation(saleIdentifier, saleType);
   }
+  if (typeof validateUrl !== 'string') return validateUrl;
 
   const maxAttempts = 2;
   let lastError: SterenError = { kind: 'network' };
@@ -49,11 +75,13 @@ export async function validateSaleWithSteren(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const res = await callWithTimeout(
-        `${STEREN_API_URL}/validate`,
+        validateUrl,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'Cache-Control': 'no-store',
             Authorization: `Bearer ${STEREN_API_KEY}`,
           },
           body: JSON.stringify({
@@ -61,7 +89,7 @@ export async function validateSaleWithSteren(
             sale_type: saleType,
           }),
         },
-        5000
+        Number.isFinite(STEREN_TIMEOUT_MS) ? STEREN_TIMEOUT_MS : 5000
       );
 
       if (res.status >= 500) {
@@ -76,7 +104,7 @@ export async function validateSaleWithSteren(
         return {
           valid: false,
           reason: body?.reason === 'expired' ? 'expired' : 'not_found',
-          raw: body,
+          raw: redactSensitive(body),
         };
       }
 
@@ -86,7 +114,7 @@ export async function validateSaleWithSteren(
         branch: body.branch ?? null,
         sale_date: body.sale_date ?? null,
         total_amount: body.total_amount != null ? Number(body.total_amount) : null,
-        raw: body,
+        raw: redactSensitive(body),
       };
     } catch (err: any) {
       if (err?.name === 'AbortError') {
@@ -99,6 +127,36 @@ export async function validateSaleWithSteren(
   }
 
   return lastError;
+}
+
+function redactSensitive(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(redactSensitive);
+
+  const blocked = new Set([
+    'token',
+    'access_token',
+    'refresh_token',
+    'authorization',
+    'api_key',
+    'apikey',
+    'password',
+    'secret',
+    'phone',
+    'telefono',
+    'email',
+    'correo',
+    'rfc',
+    'address',
+    'direccion',
+  ]);
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      key,
+      blocked.has(key.toLowerCase()) ? '[redacted]' : redactSensitive(item),
+    ])
+  );
 }
 
 // Dev-only fallback when STEREN credentials absent.

@@ -1,19 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { clientIp, hashForRateLimit, safeCompare, secureJson } from '@/lib/security';
+import { rateLimit } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function isAuthorized(req: NextRequest) {
   const token = process.env.ADMIN_TOKEN;
-  if (!token) return true; // dev mode without admin gate
-  const header = req.headers.get('x-admin-token');
-  return header === token;
+  if (!token) return false;
+
+  const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
+  const header = req.headers.get('x-admin-token')?.trim();
+  const supplied = bearer || header || '';
+  return supplied.length > 0 && safeCompare(supplied, token);
 }
 
 export async function GET(req: NextRequest) {
+  const ip = clientIp(req);
+  const limit = rateLimit(`admin:ip:${hashForRateLimit(ip)}`, { limit: 12, windowMs: 60_000 });
+  if (!limit.ok) {
+    return secureJson(
+      { ok: false, message: 'Intenta nuevamente más tarde.' },
+      { status: 429, retryAfterMs: limit.retryAfterMs }
+    );
+  }
+
   if (!isAuthorized(req)) {
-    return NextResponse.json({ ok: false, message: 'No autorizado.' }, { status: 401 });
+    return secureJson({ ok: false, message: 'No autorizado.' }, { status: 401 });
   }
 
   const sb = createClient(
@@ -44,7 +58,7 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(10);
 
-  return NextResponse.json({
+  return secureJson({
     ok: true,
     stats: {
       users: users.count ?? 0,

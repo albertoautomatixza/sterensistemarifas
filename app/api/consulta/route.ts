@@ -1,32 +1,44 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { rateLimit } from '@/lib/rateLimit';
 import { lookupLocalParticipation, shouldUseLocalRegistrationStore } from '@/lib/localRegistrationStore';
+import { clientIp, hashForRateLimit, secureJson } from '@/lib/security';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-  const limit = rateLimit(`consulta:ip:${ip}`, { limit: 30, windowMs: 60_000 });
+  const ip = clientIp(req);
+  const limit = rateLimit(`consulta:ip:${hashForRateLimit(ip)}`, { limit: 20, windowMs: 60_000 });
   if (!limit.ok) {
-    return NextResponse.json(
+    return secureJson(
       { ok: false, message: 'Intenta nuevamente más tarde.' },
-      { status: 429 }
+      { status: 429, retryAfterMs: limit.retryAfterMs }
     );
   }
 
   const folio = req.nextUrl.searchParams.get('folio')?.trim();
   if (!folio || !/^[A-Z0-9\-]{4,40}$/i.test(folio)) {
-    return NextResponse.json(
+    return secureJson(
       { ok: false, message: 'Folio inválido.' },
       { status: 400 }
     );
   }
 
+  const folioLimit = rateLimit(`consulta:folio:${hashForRateLimit(folio.toUpperCase())}`, {
+    limit: 8,
+    windowMs: 60_000,
+  });
+  if (!folioLimit.ok) {
+    return secureJson(
+      { ok: false, message: 'Intenta nuevamente más tarde.' },
+      { status: 429, retryAfterMs: folioLimit.retryAfterMs }
+    );
+  }
+
   if (shouldUseLocalRegistrationStore()) {
     const result = await lookupLocalParticipation(folio);
-    return NextResponse.json(result, { status: result.ok ? 200 : 404 });
+    return secureJson(result, { status: result.ok ? 200 : 404 });
   }
 
   const sb = createClient(
@@ -42,7 +54,7 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   if (error || !data) {
-    return NextResponse.json(
+    return secureJson(
       { ok: false, message: 'No se encontró la participación.' },
       { status: 404 }
     );
@@ -54,7 +66,7 @@ export async function GET(req: NextRequest) {
     .eq('id', data.raffle_id)
     .maybeSingle();
 
-  return NextResponse.json({
+  return secureJson({
     ok: true,
     entry_number: data.entry_number,
     internal_folio: data.internal_folio,

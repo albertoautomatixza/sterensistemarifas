@@ -1,62 +1,72 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { registrationSchema } from '@/lib/validators';
 import { registerParticipation } from '@/lib/registrationService';
 import { rateLimit } from '@/lib/rateLimit';
+import {
+  clientIp,
+  hashForRateLimit,
+  isSameOriginRequest,
+  readLimitedJson,
+  secureJson,
+} from '@/lib/security';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function clientIp(req: NextRequest): string | null {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    null
-  );
-}
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req);
   const ua = req.headers.get('user-agent');
 
-  const ipLimit = rateLimit(`reg:ip:${ip ?? 'unknown'}`, { limit: 10, windowMs: 60_000 });
+  if (!isSameOriginRequest(req)) {
+    return secureJson(
+      { ok: false, error_code: 'VALIDATION_ERROR', message: 'Solicitud no permitida.' },
+      { status: 403 }
+    );
+  }
+
+  const ipLimit = rateLimit(`reg:ip:${hashForRateLimit(ip)}`, { limit: 8, windowMs: 60_000 });
   if (!ipLimit.ok) {
-    return NextResponse.json(
+    return secureJson(
       { ok: false, error_code: 'RATE_LIMITED', message: 'Intenta nuevamente más tarde.' },
-      { status: 429 }
+      { status: 429, retryAfterMs: ipLimit.retryAfterMs }
     );
   }
 
-  let json: unknown;
-  try {
-    json = await req.json();
-  } catch {
-    return NextResponse.json(
-      { ok: false, error_code: 'VALIDATION_ERROR', message: 'Solicitud inválida.' },
-      { status: 400 }
+  const json = await readLimitedJson(req);
+  if (!json.ok) {
+    return secureJson(
+      { ok: false, error_code: 'VALIDATION_ERROR', message: json.message },
+      { status: json.status }
     );
   }
 
-  const parsed = registrationSchema.safeParse(json);
+  const parsed = registrationSchema.safeParse(json.value);
   if (!parsed.success) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error_code: 'VALIDATION_ERROR',
-        message: 'Datos inválidos.',
-        details: parsed.error.flatten().fieldErrors,
-      },
+    return secureJson(
+      { ok: false, error_code: 'VALIDATION_ERROR', message: 'Datos inválidos.' },
       { status: 400 }
     );
   }
 
-  const phoneLimit = rateLimit(`reg:phone:${parsed.data.phone}`, {
-    limit: 5,
+  const phoneLimit = rateLimit(`reg:phone:${hashForRateLimit(parsed.data.phone)}`, {
+    limit: 4,
     windowMs: 60_000,
   });
   if (!phoneLimit.ok) {
-    return NextResponse.json(
+    return secureJson(
       { ok: false, error_code: 'RATE_LIMITED', message: 'Intenta nuevamente más tarde.' },
-      { status: 429 }
+      { status: 429, retryAfterMs: phoneLimit.retryAfterMs }
+    );
+  }
+
+  const saleLimit = rateLimit(`reg:sale:${hashForRateLimit(parsed.data.sale_identifier.toUpperCase())}`, {
+    limit: 3,
+    windowMs: 60_000,
+  });
+  if (!saleLimit.ok) {
+    return secureJson(
+      { ok: false, error_code: 'RATE_LIMITED', message: 'Intenta nuevamente más tarde.' },
+      { status: 429, retryAfterMs: saleLimit.retryAfterMs }
     );
   }
 
@@ -73,9 +83,10 @@ export async function POST(req: NextRequest) {
       : result.error_code === 'NO_ACTIVE_RAFFLE'
       ? 404
       : 500;
-    return NextResponse.json(result, { status });
-  } catch {
-    return NextResponse.json(
+    return secureJson(result, { status });
+  } catch (err) {
+    console.error('registration_failed', { reason: err instanceof Error ? err.message : 'unknown' });
+    return secureJson(
       { ok: false, error_code: 'INTERNAL_ERROR', message: 'No fue posible completar el registro.' },
       { status: 500 }
     );
