@@ -20,16 +20,45 @@ export type SterenError =
   | { kind: 'unsafe_config' }
   | { kind: 'upstream_error'; status: number };
 
+type TokenCache = {
+  token: string;
+  expiresAt: number;
+};
+
+type StoreGroupsRange = {
+  startDate: string;
+  endDate: string;
+};
+
+type SaleMatch = {
+  matchedBy: 'pedido' | 'factura';
+  store: string | null;
+  pedido: string | null;
+  factura: string | null;
+  tipoDocumento: string | null;
+  fecha: string | null;
+  totalAmount: number | null;
+  itemCount: number;
+  paymentCount: number;
+};
+
 const STEREN_API_URL = process.env.STEREN_API_URL;
 const STEREN_API_KEY = process.env.STEREN_API_KEY;
-const STEREN_TIMEOUT_MS = Number(process.env.STEREN_TIMEOUT_MS ?? 5000);
+const STEREN_API_USERNAME = process.env.STEREN_API_USERNAME ?? process.env.STEREN_API_USER;
+const STEREN_API_PASSWORD = process.env.STEREN_API_PASSWORD;
+const STEREN_TIMEOUT_MS = toSafeNumber(process.env.STEREN_TIMEOUT_MS, 30_000, 3_000, 60_000);
+const STEREN_SALES_LOOKBACK_DAYS = toSafeNumber(process.env.STEREN_SALES_LOOKBACK_DAYS, 31, 1, 31);
+const STEREN_SALES_PAGE_SIZE = toSafeNumber(process.env.STEREN_SALES_PAGE_SIZE, 500, 1, 1000);
+const STEREN_SALES_MAX_PAGES = toSafeNumber(process.env.STEREN_SALES_MAX_PAGES, 20, 1, 100);
+
+let tokenCache: TokenCache | null = null;
 
 function isLocalPreviewMode() {
   return process.env.LOCAL_REGISTRATION_STORE === 'true' || !process.env.SUPABASE_SERVICE_ROLE_KEY;
 }
 
-function resolveSterenValidateUrl(): string | SterenError {
-  if (!STEREN_API_URL || !STEREN_API_KEY) {
+function resolveSterenBaseUrl(): string | SterenError {
+  if (!STEREN_API_URL || !STEREN_API_KEY || !STEREN_API_USERNAME || !STEREN_API_PASSWORD) {
     return isLocalPreviewMode() ? '' : { kind: 'missing_config' };
   }
 
@@ -39,10 +68,14 @@ function resolveSterenValidateUrl(): string | SterenError {
     if (process.env.NODE_ENV === 'production' && base.protocol !== 'https:' && !isLocalHost) {
       return { kind: 'unsafe_config' };
     }
-    return `${base.toString().replace(/\/+$/, '')}/validate`;
+    return base.toString().replace(/\/+$/, '');
   } catch {
     return { kind: 'unsafe_config' };
   }
+}
+
+function endpoint(baseUrl: string, pathname: string) {
+  return `${baseUrl}${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
 }
 
 async function callWithTimeout(
@@ -53,9 +86,104 @@ async function callWithTimeout(
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, {
+      ...init,
+      cache: 'no-store',
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(id);
+  }
+}
+
+async function readJson(res: Response) {
+  return res.json().catch(() => ({}));
+}
+
+function decodeJwtExpiration(token: string) {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return Date.now() + 10 * 60_000;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const json = JSON.parse(Buffer.from(normalized, 'base64').toString('utf8'));
+    return typeof json.exp === 'number' ? json.exp * 1000 : Date.now() + 10 * 60_000;
+  } catch {
+    return Date.now() + 10 * 60_000;
+  }
+}
+
+async function getSterenToken(baseUrl: string, forceRefresh = false): Promise<string | SterenError> {
+  if (!forceRefresh && tokenCache && tokenCache.expiresAt - Date.now() > 60_000) {
+    return tokenCache.token;
+  }
+
+  try {
+    const res = await callWithTimeout(
+      endpoint(baseUrl, '/api/Login'),
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        },
+        body: JSON.stringify({
+          user: STEREN_API_USERNAME,
+          password: STEREN_API_PASSWORD,
+        }),
+      },
+      STEREN_TIMEOUT_MS
+    );
+
+    const body = await readJson(res);
+    if (!res.ok || body?.success === false || typeof body?.token !== 'string') {
+      return { kind: 'upstream_error', status: res.status };
+    }
+
+    tokenCache = {
+      token: body.token,
+      expiresAt: decodeJwtExpiration(body.token),
+    };
+
+    return tokenCache.token;
+  } catch (err: any) {
+    return err?.name === 'AbortError' ? { kind: 'timeout' } : { kind: 'network' };
+  }
+}
+
+async function getStoreGroupsPage(
+  baseUrl: string,
+  token: string,
+  range: StoreGroupsRange,
+  pageNumber: number
+): Promise<unknown | SterenError | { retryWithFreshToken: true }> {
+  const params = new URLSearchParams({
+    ApiKey: STEREN_API_KEY!,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    pageSize: String(STEREN_SALES_PAGE_SIZE),
+    pageNumber: String(pageNumber),
+  });
+
+  try {
+    const res = await callWithTimeout(
+      `${endpoint(baseUrl, '/api/StoreGroups')}?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-store',
+        },
+      },
+      STEREN_TIMEOUT_MS
+    );
+
+    if (res.status === 401) return { retryWithFreshToken: true };
+    if (!res.ok) return { kind: 'upstream_error', status: res.status };
+    return readJson(res);
+  } catch (err: any) {
+    return err?.name === 'AbortError' ? { kind: 'timeout' } : { kind: 'network' };
   }
 }
 
@@ -63,105 +191,212 @@ export async function validateSaleWithSteren(
   saleIdentifier: string,
   saleType: 'ticket' | 'factura'
 ): Promise<SterenValidationResult | SterenError> {
-  const validateUrl = resolveSterenValidateUrl();
-  if (validateUrl === '') {
-    return simulateValidation(saleIdentifier, saleType);
-  }
-  if (typeof validateUrl !== 'string') return validateUrl;
+  const baseUrl = resolveSterenBaseUrl();
+  if (baseUrl === '') return simulateValidation(saleIdentifier, saleType);
+  if (typeof baseUrl !== 'string') return baseUrl;
 
-  const maxAttempts = 2;
-  let lastError: SterenError = { kind: 'network' };
+  const token = await getSterenToken(baseUrl);
+  if (typeof token !== 'string') return token;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const res = await callWithTimeout(
-        validateUrl,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'Cache-Control': 'no-store',
-            Authorization: `Bearer ${STEREN_API_KEY}`,
-          },
-          body: JSON.stringify({
-            sale_identifier: saleIdentifier,
-            sale_type: saleType,
-          }),
-        },
-        Number.isFinite(STEREN_TIMEOUT_MS) ? STEREN_TIMEOUT_MS : 5000
-      );
+  const range = getSalesRange();
+  const normalizedIdentifier = normalizeIdentifier(saleIdentifier);
 
-      if (res.status >= 500) {
-        lastError = { kind: 'upstream_error', status: res.status };
-        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-        continue;
-      }
+  let activeToken = token;
+  for (let page = 1; page <= STEREN_SALES_MAX_PAGES; page++) {
+    let body = await getStoreGroupsPage(baseUrl, activeToken, range, page);
 
-      const body = await res.json().catch(() => ({}));
+    if (isRetryTokenSignal(body)) {
+      const freshToken = await getSterenToken(baseUrl, true);
+      if (typeof freshToken !== 'string') return freshToken;
+      activeToken = freshToken;
+      body = await getStoreGroupsPage(baseUrl, activeToken, range, page);
+    }
 
-      if (!res.ok || body?.valid === false) {
-        return {
-          valid: false,
-          reason: body?.reason === 'expired' ? 'expired' : 'not_found',
-          raw: redactSensitive(body),
-        };
-      }
+    if (isSterenError(body)) return body;
 
+    const match = findSaleMatch(body, normalizedIdentifier, saleType);
+    if (match) {
       return {
         valid: true,
-        steren_internal_identifier: String(body.id ?? saleIdentifier),
-        branch: body.branch ?? null,
-        sale_date: body.sale_date ?? null,
-        total_amount: body.total_amount != null ? Number(body.total_amount) : null,
-        raw: redactSensitive(body),
+        steren_internal_identifier: match.pedido ?? match.factura ?? saleIdentifier,
+        branch: match.store,
+        sale_date: toDateOnly(match.fecha),
+        total_amount: match.totalAmount,
+        raw: {
+          source: 'steren_store_groups',
+          matched_by: match.matchedBy,
+          sale_type: saleType,
+          branch: match.store,
+          sale_date: toDateOnly(match.fecha),
+          total_amount: match.totalAmount,
+          item_count: match.itemCount,
+          payment_count: match.paymentCount,
+          query_window: range,
+        },
       };
-    } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        lastError = { kind: 'timeout' };
-      } else {
-        lastError = { kind: 'network' };
+    }
+
+    if (isProbablyLastPage(body)) break;
+  }
+
+  return {
+    valid: false,
+    reason: 'not_found',
+    raw: {
+      source: 'steren_store_groups',
+      found: false,
+      sale_type: saleType,
+      query_window: range,
+      max_pages_checked: STEREN_SALES_MAX_PAGES,
+    },
+  };
+}
+
+function findSaleMatch(body: unknown, normalizedIdentifier: string, saleType: 'ticket' | 'factura'): SaleMatch | null {
+  const dateGroups = getArray((body as any)?.datee);
+  const preferredFields: Array<'pedido' | 'factura'> =
+    saleType === 'factura' ? ['factura', 'pedido'] : ['pedido', 'factura'];
+
+  for (const dateGroup of dateGroups) {
+    for (const store of getArray(dateGroup?.store)) {
+      for (const pedido of getArray(store?.pedido)) {
+        for (const field of preferredFields) {
+          const candidate = normalizeIdentifier(pedido?.[field]);
+          if (candidate && candidate === normalizedIdentifier) {
+            const detalle = getArray(pedido?.detalle);
+            const formasPago = getArray(pedido?.formasPago);
+            return {
+              matchedBy: field,
+              store: stringifyOrNull(store?.mandt),
+              pedido: stringifyOrNull(pedido?.pedido),
+              factura: stringifyOrNull(pedido?.factura),
+              tipoDocumento: stringifyOrNull(pedido?.tipoDocumento),
+              fecha: stringifyOrNull(pedido?.fecha),
+              totalAmount: calculateTotal(detalle, formasPago),
+              itemCount: detalle.length,
+              paymentCount: formasPago.length,
+            };
+          }
+        }
       }
-      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
     }
   }
 
-  return lastError;
+  return null;
 }
 
-function redactSensitive(value: unknown): unknown {
-  if (!value || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(redactSensitive);
+function isProbablyLastPage(body: unknown) {
+  const dateGroups = getArray((body as any)?.datee);
+  if (dateGroups.length === 0) return true;
 
-  const blocked = new Set([
-    'token',
-    'access_token',
-    'refresh_token',
-    'authorization',
-    'api_key',
-    'apikey',
-    'password',
-    'secret',
-    'phone',
-    'telefono',
-    'email',
-    'correo',
-    'rfc',
-    'address',
-    'direccion',
-  ]);
+  const orderCount = dateGroups.reduce((count, dateGroup) => {
+    return (
+      count +
+      getArray(dateGroup?.store).reduce((storeCount, store) => {
+        return storeCount + getArray(store?.pedido).length;
+      }, 0)
+    );
+  }, 0);
 
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-      key,
-      blocked.has(key.toLowerCase()) ? '[redacted]' : redactSensitive(item),
-    ])
+  return orderCount < STEREN_SALES_PAGE_SIZE;
+}
+
+function getSalesRange(): StoreGroupsRange {
+  const explicitStart = process.env.STEREN_SALES_START_DATE;
+  const explicitEnd = process.env.STEREN_SALES_END_DATE;
+  if (isApiDate(explicitStart) && isApiDate(explicitEnd)) {
+    return { startDate: explicitStart!, endDate: explicitEnd! };
+  }
+
+  const end = new Date();
+  end.setDate(end.getDate() - 1);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (STEREN_SALES_LOOKBACK_DAYS - 1));
+
+  return {
+    startDate: formatApiDate(start),
+    endDate: formatApiDate(end),
+  };
+}
+
+function formatApiDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+
+function isApiDate(value: string | undefined) {
+  return !!value && /^\d{8}$/.test(value);
+}
+
+function normalizeIdentifier(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+function stringifyOrNull(value: unknown) {
+  const normalized = String(value ?? '').trim();
+  return normalized || null;
+}
+
+function toDateOnly(value: string | null) {
+  if (!value) return null;
+  return value.slice(0, 10);
+}
+
+function getArray(value: unknown): any[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function calculateTotal(detalle: any[], formasPago: any[]) {
+  const fromPayments = formasPago.reduce(
+    (total, item) => total + toNumber(item?.subTotalFormaPago) + toNumber(item?.ivaFormaPago),
+    0
+  );
+  if (fromPayments > 0) return roundMoney(fromPayments);
+
+  const fromDetails = detalle.reduce(
+    (total, item) => total + toNumber(item?.subtotal) + toNumber(item?.iva),
+    0
+  );
+  return fromDetails > 0 ? roundMoney(fromDetails) : null;
+}
+
+function toNumber(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function toSafeNumber(value: string | undefined, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function isSterenError(value: unknown): value is SterenError {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'kind' in value &&
+    ['timeout', 'network', 'missing_config', 'unsafe_config', 'upstream_error'].includes(
+      String((value as any).kind)
+    )
   );
 }
 
-// Dev-only fallback when STEREN credentials absent.
-// Deterministic based on identifier to allow testing.
-// Rejects identifiers starting with "INVALID".
+function isRetryTokenSignal(value: unknown): value is { retryWithFreshToken: true } {
+  return !!value && typeof value === 'object' && (value as any).retryWithFreshToken === true;
+}
+
+// Dev-only fallback when Steren credentials are absent and the app is in local preview mode.
+// Rejects identifiers starting with "INVALID" so validation errors can still be tested.
 function simulateValidation(
   saleIdentifier: string,
   saleType: 'ticket' | 'factura'
