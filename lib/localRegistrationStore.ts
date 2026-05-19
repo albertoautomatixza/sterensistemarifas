@@ -68,6 +68,11 @@ type LocalLookupResult =
       message: string;
     };
 
+type LocalCustomerLookupResult = {
+  ok: true;
+  exists: boolean;
+};
+
 const DEFAULT_RAFFLE = {
   id: 'local-active-raffle',
   name: 'Rifa Trimestral Q2 2026 - Aguascalientes',
@@ -126,6 +131,18 @@ function generateFolio(quarter: string, entryNumber: string) {
   return `${quarter}-${entryNumber}-${rand}`;
 }
 
+function hasCompleteProfile(input: RegistrationPayload) {
+  return Boolean(input.full_name && input.email && input.birthdate);
+}
+
+export async function lookupLocalCustomerByPhone(phone: string): Promise<LocalCustomerLookupResult> {
+  const db = await readDb();
+  return {
+    ok: true,
+    exists: db.users.some((item) => item.phone === phone),
+  };
+}
+
 export async function registerParticipationLocal(
   input: RegistrationPayload
 ): Promise<RegistrationResult> {
@@ -177,12 +194,16 @@ export async function registerParticipationLocal(
     };
     db.users = db.users.map((item) => (item.id === user!.id ? user! : item));
   } else {
+    if (!hasCompleteProfile(input)) {
+      return { ok: false, error_code: 'VALIDATION_ERROR', message: 'Completa tus datos para registrarte.' };
+    }
+
     user = {
       id: randomUUID(),
-      full_name: input.full_name,
+      full_name: input.full_name!,
       phone: input.phone,
-      email: input.email,
-      birthdate: input.birthdate,
+      email: input.email!,
+      birthdate: input.birthdate!,
       created_at: now,
       updated_at: now,
     };

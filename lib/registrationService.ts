@@ -51,6 +51,10 @@ function generateFolio(raffleQuarter: string, entryNumber: string): string {
   return `${raffleQuarter}-${entryNumber}-${rand}`;
 }
 
+function hasCompleteProfile(input: RegistrationPayload) {
+  return Boolean(input.full_name && input.email && input.birthdate);
+}
+
 export async function registerParticipation(
   input: RegistrationPayload,
   ctx: Ctx
@@ -104,20 +108,24 @@ export async function registerParticipation(
   if (existingUser) {
     userId = existingUser.id;
     const patch: Record<string, string> = {};
-    if (!existingUser.email) patch.email = input.email;
-    if (!existingUser.full_name) patch.full_name = input.full_name;
-    if (!existingUser.birthdate) patch.birthdate = input.birthdate;
+    if (!existingUser.email && input.email) patch.email = input.email;
+    if (!existingUser.full_name && input.full_name) patch.full_name = input.full_name;
+    if (!existingUser.birthdate && input.birthdate) patch.birthdate = input.birthdate;
     if (Object.keys(patch).length > 0) {
       await sb.from('users').update(patch).eq('id', userId);
     }
   } else {
+    if (!hasCompleteProfile(input)) {
+      return { ok: false, error_code: 'VALIDATION_ERROR', message: 'Completa tus datos para registrarte.' };
+    }
+
     const { data: created, error: userErr } = await sb
       .from('users')
       .insert({
-        full_name: input.full_name,
+        full_name: input.full_name!,
         phone: input.phone,
-        email: input.email,
-        birthdate: input.birthdate,
+        email: input.email!,
+        birthdate: input.birthdate!,
       })
       .select('id')
       .maybeSingle();
@@ -220,6 +228,8 @@ export async function registerParticipation(
 
   const entryNumber = padEntryNumber(Number(nextVal), raffle.winning_digits_count ?? 5);
   const internalFolio = generateFolio(raffle.quarter, entryNumber);
+  const fullName = existingUser?.full_name ?? input.full_name ?? '';
+  const email = existingUser?.email ?? input.email ?? '';
 
   const { data: entry, error: entryErr } = await sb
     .from('entries')
@@ -254,8 +264,8 @@ export async function registerParticipation(
   void sendConfirmationEmail(sb, {
     userId,
     entryId: entry.id,
-    email: input.email,
-    full_name: input.full_name,
+    email,
+    full_name: fullName,
     entry_number: entryNumber,
     internal_folio: internalFolio,
     raffle_name: raffle.name,
@@ -266,8 +276,8 @@ export async function registerParticipation(
     ok: true,
     entry_number: entryNumber,
     internal_folio: internalFolio,
-    full_name: input.full_name,
-    email: input.email,
+    full_name: fullName,
+    email,
     raffle_name: raffle.name,
     created_at: entry.created_at as string,
   };

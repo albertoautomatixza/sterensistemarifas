@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { registrationSchema, type RegistrationPayload } from '@/lib/validators';
+import {
+  customerDetailsSchema,
+  customerLookupSchema,
+  registrationSchema,
+  type RegistrationPayload,
+} from '@/lib/validators';
 import {
   User,
   Phone,
@@ -19,11 +24,14 @@ import {
   X,
 } from 'lucide-react';
 
-type Step = 0 | 1 | 2;
+type Step = 0 | 1 | 2 | 3;
 
 export function RegistrationWizard() {
   const [step, setStep] = useState<Step>(0);
   const [submitting, setSubmitting] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [returningCustomer, setReturningCustomer] = useState(false);
+  const [lookupMessage, setLookupMessage] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [showTerms, setShowTerms] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -44,20 +52,92 @@ export function RegistrationWizard() {
     },
   });
 
-  const { register, handleSubmit, formState, watch, setValue, trigger } = form;
+  const { register, handleSubmit, formState, watch, setValue, getValues, setError, clearErrors, trigger } = form;
 
   async function next() {
     if (step === 0) {
-      const ok = await trigger(['full_name', 'phone', 'email', 'birthdate']);
-      if (ok) setStep(1);
+      await identifyCustomer();
     } else if (step === 1) {
-      const ok = await trigger(['sale_type', 'sale_identifier']);
+      const ok = validateCustomerDetails();
       if (ok) setStep(2);
+    } else if (step === 2) {
+      const ok = await trigger(['sale_type', 'sale_identifier']);
+      if (ok) setStep(3);
     }
   }
 
   function back() {
+    setServerError(null);
+    if (step === 2 && returningCustomer) {
+      setStep(0);
+      return;
+    }
     if (step > 0) setStep((step - 1) as Step);
+  }
+
+  function setFirstFieldError(error: unknown) {
+    const issues = (error as any)?.issues ?? [];
+    issues.forEach((issue: any) => {
+      const field = issue.path?.[0] as keyof RegistrationPayload | undefined;
+      if (field) setError(field, { type: 'manual', message: issue.message });
+    });
+  }
+
+  async function identifyCustomer() {
+    setLookupMessage(null);
+    setServerError(null);
+    clearErrors('phone');
+
+    const phone = getValues('phone');
+    const parsed = customerLookupSchema.safeParse({ phone });
+    if (!parsed.success) {
+      setFirstFieldError(parsed.error);
+      return;
+    }
+
+    setLookupLoading(true);
+    try {
+      const res = await fetch('/api/clientes/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: parsed.data.phone }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) {
+        setLookupMessage(body?.message ?? 'No fue posible validar el teléfono.');
+        return;
+      }
+
+      if (body.exists) {
+        setReturningCustomer(true);
+        setLookupMessage('Ya encontramos este teléfono. Solo registra tu nueva compra.');
+        setStep(2);
+      } else {
+        setReturningCustomer(false);
+        setLookupMessage('No encontramos este teléfono. Completa tus datos una sola vez.');
+        setStep(1);
+      }
+    } catch {
+      setLookupMessage('Intenta nuevamente más tarde.');
+    } finally {
+      setLookupLoading(false);
+    }
+  }
+
+  function validateCustomerDetails() {
+    clearErrors(['full_name', 'phone', 'email', 'birthdate']);
+    const values = getValues();
+    const parsed = customerDetailsSchema.safeParse({
+      full_name: values.full_name,
+      phone: values.phone,
+      email: values.email,
+      birthdate: values.birthdate,
+    });
+    if (!parsed.success) {
+      setFirstFieldError(parsed.error);
+      return false;
+    }
+    return true;
   }
 
   function handleScanResult(rawValue: string) {
@@ -106,10 +186,47 @@ export function RegistrationWizard() {
       <form onSubmit={onSubmit} className="p-6 md:p-8">
         {step === 0 && (
           <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-[#003A5D]">Primero valida tu teléfono</div>
+              <p className="mt-1 text-sm text-slate-600">
+                Si ya participaste antes, no tendrás que volver a escribir todos tus datos.
+              </p>
+            </div>
+            <Field
+              label="Teléfono (10 dígitos)"
+              icon={Phone}
+              error={formState.errors.phone?.message}
+              input={
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="4491234567"
+                  {...register('phone')}
+                  className="input"
+                />
+              }
+            />
+            {lookupMessage && (
+              <div className="rounded-xl border border-[#00A3E0]/20 bg-[#00A3E0]/5 p-3 text-sm text-[#003A5D]">
+                {lookupMessage}
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-[#003A5D]">Completa tus datos</div>
+              <p className="mt-1 text-sm text-slate-600">
+                Solo los pedimos la primera vez. En compras futuras bastará con tu teléfono.
+              </p>
+            </div>
             <Field
               label="Nombre completo"
               icon={User}
-              error={formState.errors.full_name?.message}
+              error={formState.errors.full_name?.message as string | undefined}
               input={
                 <input
                   type="text"
@@ -131,14 +248,15 @@ export function RegistrationWizard() {
                   maxLength={10}
                   placeholder="4491234567"
                   {...register('phone')}
-                  className="input"
+                  readOnly
+                  className="input bg-slate-50"
                 />
               }
             />
             <Field
               label="Correo electrónico"
               icon={Mail}
-              error={formState.errors.email?.message}
+              error={formState.errors.email?.message as string | undefined}
               input={
                 <input
                   type="email"
@@ -152,14 +270,19 @@ export function RegistrationWizard() {
             <Field
               label="Fecha de nacimiento"
               icon={Calendar}
-              error={formState.errors.birthdate?.message}
+              error={formState.errors.birthdate?.message as string | undefined}
               input={<input type="date" {...register('birthdate')} className="input" />}
             />
           </div>
         )}
 
-        {step === 1 && (
+        {step === 2 && (
           <div className="space-y-5">
+            {returningCustomer && (
+              <div className="rounded-2xl border border-[#00A3E0]/20 bg-[#00A3E0]/5 p-4 text-sm text-[#003A5D]">
+                Este teléfono ya está registrado. Ahora solo captura tu ticket o factura.
+              </div>
+            )}
             <div>
               <div className="mb-2 text-sm font-medium text-slate-700">Tipo de comprobante</div>
               <div className="grid grid-cols-2 gap-3">
@@ -208,7 +331,7 @@ export function RegistrationWizard() {
           </div>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <div className="space-y-5">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
               <div className="flex items-start gap-3">
@@ -221,9 +344,9 @@ export function RegistrationWizard() {
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                <Summary k="Nombre" v={watch('full_name')} />
+                <Summary k="Nombre" v={returningCustomer && !watch('full_name') ? 'Cliente registrado' : watch('full_name')} />
                 <Summary k="Teléfono" v={watch('phone')} />
-                <Summary k="Correo" v={watch('email')} />
+                <Summary k="Correo" v={returningCustomer && !watch('email') ? 'Guardado previamente' : watch('email')} />
                 <Summary k="Tipo" v={watch('sale_type')} />
                 <Summary k="Identificador" v={watch('sale_identifier')} />
               </div>
@@ -269,18 +392,25 @@ export function RegistrationWizard() {
           <button
             type="button"
             onClick={back}
-            disabled={step === 0 || submitting}
+            disabled={step === 0 || submitting || lookupLoading}
             className="rounded-full px-5 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
           >
             Atrás
           </button>
-          {step < 2 ? (
+          {step < 3 ? (
             <button
               type="button"
               onClick={next}
+              disabled={lookupLoading}
               className="inline-flex items-center gap-2 rounded-full bg-[#00A3E0] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0090c7]"
             >
-              Continuar
+              {lookupLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Validando...
+                </>
+              ) : (
+                'Continuar'
+              )}
             </button>
           ) : (
             <button
@@ -361,14 +491,14 @@ function extractSaleIdentifier(rawValue: string) {
 }
 
 function Stepper({ step }: { step: Step }) {
-  const items = ['Tus datos', 'Tu compra', 'Confirmar'];
+  const items = ['Teléfono', 'Tus datos', 'Tu compra', 'Confirmar'];
   return (
-    <div className="grid grid-cols-3 gap-2 border-b border-slate-100 px-4 py-5 sm:gap-4 sm:px-6 md:px-8">
+    <div className="flex gap-4 overflow-x-auto border-b border-slate-100 px-4 py-5 sm:px-6 md:px-8">
       {items.map((label, i) => {
         const active = i === step;
         const done = i < step;
         return (
-          <div key={label} className="min-w-0">
+          <div key={label} className="min-w-[92px] flex-1">
             <div className="flex items-center gap-2">
               <div
                 className={`flex h-8 w-8 flex-none items-center justify-center rounded-full text-xs font-semibold ${
