@@ -354,14 +354,20 @@ function toDateOnly(value: string | null) {
 }
 
 function getArray(value: unknown): any[] {
-  return Array.isArray(value) ? value : [];
+  if (Array.isArray(value)) return value;
+  return value && typeof value === 'object' ? [value] : [];
 }
 
 function getDateGroups(body: unknown): any[] {
   const root = body as any;
   if (Array.isArray(root?.datee)) return root.datee;
   if (Array.isArray(root?.data?.datee)) return root.data.datee;
-  if (Array.isArray(root?.data)) return root.data;
+  if (Array.isArray(root?.data)) {
+    return root.data.flatMap((item: any) => {
+      if (Array.isArray(item?.datee)) return item.datee;
+      return item && typeof item === 'object' ? [item] : [];
+    });
+  }
   return [];
 }
 
