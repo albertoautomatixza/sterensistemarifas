@@ -167,7 +167,7 @@ async function getStoreGroupsPage(
 
   try {
     const res = await callWithTimeout(
-      `${endpoint(baseUrl, '/api/StoreGroups')}?${params.toString()}`,
+      `${endpoint(baseUrl, '/api/storegroups')}?${params.toString()}`,
       {
         method: 'GET',
         headers: {
@@ -181,7 +181,13 @@ async function getStoreGroupsPage(
 
     if (res.status === 401) return { retryWithFreshToken: true };
     if (!res.ok) return { kind: 'upstream_error', status: res.status };
-    return readJson(res);
+
+    const body = await readJson(res);
+    if (body?.success === false && body?.message) {
+      return { kind: 'upstream_error', status: res.status };
+    }
+
+    return body;
   } catch (err: any) {
     return err?.name === 'AbortError' ? { kind: 'timeout' } : { kind: 'network' };
   }
@@ -253,7 +259,7 @@ export async function validateSaleWithSteren(
 }
 
 function findSaleMatch(body: unknown, normalizedIdentifier: string, saleType: 'ticket' | 'factura'): SaleMatch | null {
-  const dateGroups = getArray((body as any)?.datee);
+  const dateGroups = getDateGroups(body);
   const preferredFields: Array<'pedido' | 'factura'> =
     saleType === 'factura' ? ['factura', 'pedido'] : ['pedido', 'factura'];
 
@@ -286,7 +292,7 @@ function findSaleMatch(body: unknown, normalizedIdentifier: string, saleType: 't
 }
 
 function isProbablyLastPage(body: unknown) {
-  const dateGroups = getArray((body as any)?.datee);
+  const dateGroups = getDateGroups(body);
   if (dateGroups.length === 0) return true;
 
   const orderCount = dateGroups.reduce((count, dateGroup) => {
@@ -349,6 +355,14 @@ function toDateOnly(value: string | null) {
 
 function getArray(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
+}
+
+function getDateGroups(body: unknown): any[] {
+  const root = body as any;
+  if (Array.isArray(root?.datee)) return root.datee;
+  if (Array.isArray(root?.data?.datee)) return root.data.datee;
+  if (Array.isArray(root?.data)) return root.data;
+  return [];
 }
 
 function calculateTotal(detalle: any[], formasPago: any[]) {
