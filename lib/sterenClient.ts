@@ -46,6 +46,8 @@ const STEREN_API_URL = process.env.STEREN_API_URL;
 const STEREN_API_KEY = process.env.STEREN_API_KEY;
 const STEREN_API_USERNAME = process.env.STEREN_API_USERNAME ?? process.env.STEREN_API_USER;
 const STEREN_API_PASSWORD = process.env.STEREN_API_PASSWORD;
+const STEREN_LOGIN_PATH = process.env.STEREN_LOGIN_PATH ?? '/api/Login';
+const STEREN_STORE_GROUPS_PATH = process.env.STEREN_STORE_GROUPS_PATH ?? '/api/storegroups';
 const STEREN_TIMEOUT_MS = toSafeNumber(process.env.STEREN_TIMEOUT_MS, 30_000, 3_000, 60_000);
 const STEREN_SALES_LOOKBACK_DAYS = toSafeNumber(process.env.STEREN_SALES_LOOKBACK_DAYS, 31, 1, 31);
 const STEREN_SALES_PAGE_SIZE = toSafeNumber(process.env.STEREN_SALES_PAGE_SIZE, 500, 1, 1000);
@@ -75,7 +77,20 @@ function resolveSterenBaseUrl(): string | SterenError {
 }
 
 function endpoint(baseUrl: string, pathname: string) {
-  return `${baseUrl}${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+
+  try {
+    const base = new URL(normalizedBase);
+    const basePath = base.pathname.replace(/\/+$/, '').toLowerCase();
+    if (basePath.endsWith('/api') && normalizedPath.toLowerCase().startsWith('/api/')) {
+      return `${normalizedBase}${normalizedPath.slice(4)}`;
+    }
+  } catch {
+    // resolveSterenBaseUrl already validates URLs; keep the join defensive.
+  }
+
+  return `${normalizedBase}${normalizedPath}`;
 }
 
 async function callWithTimeout(
@@ -119,7 +134,7 @@ async function getSterenToken(baseUrl: string, forceRefresh = false): Promise<st
 
   try {
     const res = await callWithTimeout(
-      endpoint(baseUrl, '/api/Login'),
+      endpoint(baseUrl, STEREN_LOGIN_PATH),
       {
         method: 'POST',
         headers: {
@@ -167,7 +182,7 @@ async function getStoreGroupsPage(
 
   try {
     const res = await callWithTimeout(
-      `${endpoint(baseUrl, '/api/storegroups')}?${params.toString()}`,
+      `${endpoint(baseUrl, STEREN_STORE_GROUPS_PATH)}?${params.toString()}`,
       {
         method: 'GET',
         headers: {
@@ -204,45 +219,47 @@ export async function validateSaleWithSteren(
   const token = await getSterenToken(baseUrl);
   if (typeof token !== 'string') return token;
 
-  const range = getSalesRange();
+  const ranges = getSalesRanges();
   const normalizedIdentifier = normalizeIdentifier(saleIdentifier);
 
   let activeToken = token;
-  for (let page = 1; page <= STEREN_SALES_MAX_PAGES; page++) {
-    let body = await getStoreGroupsPage(baseUrl, activeToken, range, page);
+  for (const range of ranges) {
+    for (let page = 1; page <= STEREN_SALES_MAX_PAGES; page++) {
+      let body = await getStoreGroupsPage(baseUrl, activeToken, range, page);
 
-    if (isRetryTokenSignal(body)) {
-      const freshToken = await getSterenToken(baseUrl, true);
-      if (typeof freshToken !== 'string') return freshToken;
-      activeToken = freshToken;
-      body = await getStoreGroupsPage(baseUrl, activeToken, range, page);
-    }
+      if (isRetryTokenSignal(body)) {
+        const freshToken = await getSterenToken(baseUrl, true);
+        if (typeof freshToken !== 'string') return freshToken;
+        activeToken = freshToken;
+        body = await getStoreGroupsPage(baseUrl, activeToken, range, page);
+      }
 
-    if (isSterenError(body)) return body;
+      if (isSterenError(body)) return body;
 
-    const match = findSaleMatch(body, normalizedIdentifier, saleType);
-    if (match) {
-      return {
-        valid: true,
-        steren_internal_identifier: match.pedido ?? match.factura ?? saleIdentifier,
-        branch: match.store,
-        sale_date: toDateOnly(match.fecha),
-        total_amount: match.totalAmount,
-        raw: {
-          source: 'steren_store_groups',
-          matched_by: match.matchedBy,
-          sale_type: saleType,
+      const match = findSaleMatch(body, normalizedIdentifier, saleType);
+      if (match) {
+        return {
+          valid: true,
+          steren_internal_identifier: match.pedido ?? match.factura ?? saleIdentifier,
           branch: match.store,
           sale_date: toDateOnly(match.fecha),
           total_amount: match.totalAmount,
-          item_count: match.itemCount,
-          payment_count: match.paymentCount,
-          query_window: range,
-        },
-      };
-    }
+          raw: {
+            source: 'steren_store_groups',
+            matched_by: match.matchedBy,
+            sale_type: saleType,
+            branch: match.store,
+            sale_date: toDateOnly(match.fecha),
+            total_amount: match.totalAmount,
+            item_count: match.itemCount,
+            payment_count: match.paymentCount,
+            query_window: range,
+          },
+        };
+      }
 
-    if (isProbablyLastPage(body)) break;
+      if (isProbablyLastPage(body)) break;
+    }
   }
 
   return {
@@ -252,7 +269,7 @@ export async function validateSaleWithSteren(
       source: 'steren_store_groups',
       found: false,
       sale_type: saleType,
-      query_window: range,
+      query_windows: ranges,
       max_pages_checked: STEREN_SALES_MAX_PAGES,
     },
   };
@@ -307,22 +324,45 @@ function isProbablyLastPage(body: unknown) {
   return orderCount < STEREN_SALES_PAGE_SIZE;
 }
 
-function getSalesRange(): StoreGroupsRange {
-  const explicitStart = process.env.STEREN_SALES_START_DATE;
-  const explicitEnd = process.env.STEREN_SALES_END_DATE;
-  if (isApiDate(explicitStart) && isApiDate(explicitEnd)) {
-    return { startDate: explicitStart!, endDate: explicitEnd! };
+function getSalesRanges(): StoreGroupsRange[] {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const explicitStart = parseApiDate(process.env.STEREN_SALES_START_DATE);
+  const explicitEnd = parseApiDate(process.env.STEREN_SALES_END_DATE);
+
+  let end = explicitEnd ?? yesterday;
+  if (end > yesterday) end = yesterday;
+
+  let start = explicitStart;
+  if (!start) {
+    start = new Date(end);
+    start.setDate(start.getDate() - (STEREN_SALES_LOOKBACK_DAYS - 1));
   }
 
-  const end = new Date();
-  end.setDate(end.getDate() - 1);
-  const start = new Date(end);
-  start.setDate(start.getDate() - (STEREN_SALES_LOOKBACK_DAYS - 1));
+  if (start > end) {
+    start = new Date(end);
+  }
 
-  return {
-    startDate: formatApiDate(start),
-    endDate: formatApiDate(end),
-  };
+  const ranges: StoreGroupsRange[] = [];
+  let cursor = startOfDay(start);
+  const lastDay = startOfDay(end);
+
+  while (cursor <= lastDay) {
+    const chunkEnd = new Date(cursor);
+    chunkEnd.setDate(chunkEnd.getDate() + 30);
+    if (chunkEnd > lastDay) chunkEnd.setTime(lastDay.getTime());
+
+    ranges.push({
+      startDate: formatApiDate(cursor),
+      endDate: formatApiDate(chunkEnd),
+    });
+
+    cursor = new Date(chunkEnd);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return ranges.reverse();
 }
 
 function formatApiDate(date: Date) {
@@ -334,6 +374,19 @@ function formatApiDate(date: Date) {
 
 function isApiDate(value: string | undefined) {
   return !!value && /^\d{8}$/.test(value);
+}
+
+function parseApiDate(value: string | undefined) {
+  if (!isApiDate(value)) return null;
+  const year = Number(value!.slice(0, 4));
+  const month = Number(value!.slice(4, 6));
+  const day = Number(value!.slice(6, 8));
+  const parsed = new Date(year, month - 1, day);
+  return formatApiDate(parsed) === value ? parsed : null;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function normalizeIdentifier(value: unknown) {
