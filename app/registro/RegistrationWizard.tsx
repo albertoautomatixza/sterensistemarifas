@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
+import type { UseFormRegisterReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   customerDetailsSchema,
@@ -10,6 +11,7 @@ import {
   registrationSchema,
   type RegistrationPayload,
 } from '@/lib/validators';
+import { extractSaleIdentifier } from '@/lib/saleIdentifier';
 import {
   User,
   Phone,
@@ -141,13 +143,19 @@ export function RegistrationWizard() {
   }
 
   function handleScanResult(rawValue: string) {
+    const identifier = normalizeSaleIdentifierField(rawValue);
+    if (!identifier) return;
+    setShowScanner(false);
+  }
+
+  function normalizeSaleIdentifierField(rawValue: string) {
     const identifier = extractSaleIdentifier(rawValue);
     setValue('sale_identifier', identifier, {
       shouldDirty: true,
       shouldTouch: true,
       shouldValidate: true,
     });
-    setShowScanner(false);
+    return identifier;
   }
 
   const onSubmit = handleSubmit(async (values) => {
@@ -314,12 +322,9 @@ export function RegistrationWizard() {
             <SaleIdentifierCapture
               error={formState.errors.sale_identifier?.message}
               input={
-                <input
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Ej. TKT-0045123 o FA-77821"
-                  {...register('sale_identifier')}
-                  className="input pr-4 font-mono uppercase tracking-wider"
+                <SaleIdentifierInput
+                  registerResult={register('sale_identifier')}
+                  onNormalize={normalizeSaleIdentifierField}
                 />
               }
               onScan={() => setShowScanner(true)}
@@ -456,40 +461,6 @@ export function RegistrationWizard() {
   );
 }
 
-function extractSaleIdentifier(rawValue: string) {
-  const trimmed = rawValue.trim();
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    const value =
-      parsed?.sale_identifier ??
-      parsed?.ticket ??
-      parsed?.factura ??
-      parsed?.folio ??
-      parsed?.codigo ??
-      parsed?.code;
-    if (typeof value === 'string' && value.trim()) return value.trim().toUpperCase();
-  } catch {
-    // QR payloads may be plain text or URLs.
-  }
-
-  try {
-    const url = new URL(trimmed);
-    const value =
-      url.searchParams.get('sale_identifier') ??
-      url.searchParams.get('ticket') ??
-      url.searchParams.get('factura') ??
-      url.searchParams.get('folio') ??
-      url.searchParams.get('codigo') ??
-      url.searchParams.get('code');
-    if (value?.trim()) return value.trim().toUpperCase();
-  } catch {
-    // Plain codes are valid too.
-  }
-
-  return trimmed.toUpperCase();
-}
-
 function Stepper({ step }: { step: Step }) {
   const items = ['Teléfono', 'Tus datos', 'Tu compra', 'Confirmar'];
   return (
@@ -524,6 +495,28 @@ function Stepper({ step }: { step: Step }) {
         );
       })}
     </div>
+  );
+}
+
+function SaleIdentifierInput({
+  registerResult,
+  onNormalize,
+}: {
+  registerResult: UseFormRegisterReturn<'sale_identifier'>;
+  onNormalize: (value: string) => string;
+}) {
+  return (
+    <input
+      type="text"
+      autoComplete="off"
+      placeholder="Ej. 650000009858"
+      {...registerResult}
+      onBlur={(event) => {
+        registerResult.onBlur(event);
+        onNormalize(event.currentTarget.value);
+      }}
+      className="input pr-4 font-mono uppercase tracking-wider"
+    />
   );
 }
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { extractSaleIdentifier } from './saleIdentifier';
 
 const phoneRegex = /^[0-9]{10}$/;
 const saleIdRegex = /^[A-Za-z0-9\-]{4,40}$/;
@@ -51,10 +52,10 @@ export const registrationSchema = z.object({
   email: optionalText(emailSchema),
   birthdate: optionalText(birthdateSchema),
   sale_type: z.enum(['ticket', 'factura']),
-  sale_identifier: z
-    .string()
-    .trim()
-    .regex(saleIdRegex, 'Identificador de venta inválido'),
+  sale_identifier: z.preprocess(
+    extractSaleIdentifier,
+    z.string().regex(saleIdRegex, 'Identificador de venta inválido')
+  ),
   accepted_terms: z.literal(true, {
     errorMap: () => ({ message: 'Debes aceptar las bases y condiciones' }),
   }),
