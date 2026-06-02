@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import type { RegistrationPayload } from './validators';
 import type { RegistrationResult } from './types';
 import { validateSaleWithSteren } from './sterenClient';
+import { generateEntryNumber, generateFolio } from './randomEntry';
 
 type LocalUser = {
   id: string;
@@ -122,17 +123,17 @@ async function writeDb(db: LocalDb) {
   await writeFile(file, JSON.stringify(db, null, 2), 'utf8');
 }
 
-function padEntryNumber(value: number, digits: number) {
-  return value.toString().padStart(digits, '0');
-}
-
-function generateFolio(quarter: string, entryNumber: string) {
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `${quarter}-${entryNumber}-${rand}`;
-}
-
 function hasCompleteProfile(input: RegistrationPayload) {
   return Boolean(input.full_name && input.email && input.birthdate);
+}
+
+function getUnusedEntryNumber(db: LocalDb) {
+  const used = new Set(db.entries.map((entry) => entry.entry_number));
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const entryNumber = generateEntryNumber(db.raffle.winning_digits_count);
+    if (!used.has(entryNumber)) return entryNumber;
+  }
+  throw new Error('No fue posible generar un número de participación único.');
 }
 
 export async function lookupLocalCustomerByPhone(phone: string): Promise<LocalCustomerLookupResult> {
@@ -224,8 +225,8 @@ export async function registerParticipationLocal(
   };
   db.sales.push(sale);
 
+  const entryNumber = getUnusedEntryNumber(db);
   db.sequence += 1;
-  const entryNumber = padEntryNumber(db.sequence, db.raffle.winning_digits_count);
   const internalFolio = generateFolio(db.raffle.quarter, entryNumber);
   const entry: LocalEntry = {
     id: randomUUID(),
@@ -270,5 +271,48 @@ export async function lookupLocalParticipation(folio: string): Promise<LocalLook
     created_at: entry.created_at,
     raffle_name: db.raffle.name,
     draw_date: db.raffle.draw_reference_date,
+  };
+}
+
+export async function getLocalAdminStats() {
+  const db = await readDb();
+  const recentEntries = [...db.entries]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 50)
+    .map((entry) => {
+      const user = db.users.find((item) => item.id === entry.user_id);
+      const sale = db.sales.find((item) => item.id === entry.sale_id);
+
+      return {
+        id: entry.id,
+        entry_number: entry.entry_number,
+        internal_folio: entry.internal_folio,
+        status: entry.status,
+        created_at: entry.created_at,
+        full_name: user?.full_name ?? null,
+        phone: user?.phone ?? null,
+        email: user?.email ?? null,
+        birthdate: user?.birthdate ?? null,
+        sale_identifier: sale?.sale_identifier ?? null,
+        sale_type: sale?.sale_type ?? null,
+        branch: sale?.branch ?? null,
+        sale_date: sale?.sale_date ?? null,
+        total_amount: sale?.total_amount ?? null,
+      };
+    });
+
+  return {
+    stats: {
+      users: db.users.length,
+      entries: db.entries.length,
+      valid_sales: db.sales.filter((sale) => sale.validation_status === 'valid').length,
+      duplicates: 0,
+      emails: {
+        sent: 0,
+        failed: 0,
+        pending: 0,
+      },
+    },
+    recent_entries: recentEntries,
   };
 }

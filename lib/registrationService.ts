@@ -3,6 +3,8 @@ import type { RegistrationPayload } from './validators';
 import type { RegistrationResult } from './types';
 import { validateSaleWithSteren } from './sterenClient';
 import { registerParticipationLocal, shouldUseLocalRegistrationStore } from './localRegistrationStore';
+import { registerParticipationPostgres, shouldUsePostgresRegistrationStore } from './postgresRegistrationStore';
+import { generateEntryNumber, generateFolio } from './randomEntry';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey =
@@ -42,15 +44,6 @@ async function audit(
   }
 }
 
-function padEntryNumber(value: number, digits: number): string {
-  return value.toString().padStart(digits, '0');
-}
-
-function generateFolio(raffleQuarter: string, entryNumber: string): string {
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `${raffleQuarter}-${entryNumber}-${rand}`;
-}
-
 function hasCompleteProfile(input: RegistrationPayload) {
   return Boolean(input.full_name && input.email && input.birthdate);
 }
@@ -59,6 +52,10 @@ export async function registerParticipation(
   input: RegistrationPayload,
   ctx: Ctx
 ): Promise<RegistrationResult> {
+  if (shouldUsePostgresRegistrationStore()) {
+    return registerParticipationPostgres(input);
+  }
+
   if (shouldUseLocalRegistrationStore()) {
     return registerParticipationLocal(input);
   }
@@ -216,33 +213,43 @@ export async function registerParticipation(
     return { ok: false, error_code: 'INTERNAL_ERROR', message: 'No fue posible completar el registro.' };
   }
 
-  // Get next entry number from DB function (atomic)
-  const { data: nextVal, error: seqErr } = await sb.rpc('get_next_entry_number', {
-    p_raffle_id: raffle.id,
-  });
-
-  if (seqErr || nextVal == null) {
-    await audit(sb, 'entry_sequence_error', 'sales', saleRow.id, { err: seqErr?.message }, ctx);
-    return { ok: false, error_code: 'INTERNAL_ERROR', message: 'No fue posible completar el registro.' };
-  }
-
-  const entryNumber = padEntryNumber(Number(nextVal), raffle.winning_digits_count ?? 5);
-  const internalFolio = generateFolio(raffle.quarter, entryNumber);
   const fullName = existingUser?.full_name ?? input.full_name ?? '';
   const email = existingUser?.email ?? input.email ?? '';
 
-  const { data: entry, error: entryErr } = await sb
-    .from('entries')
-    .insert({
-      raffle_id: raffle.id,
-      user_id: userId,
-      sale_id: saleRow.id,
-      entry_number: entryNumber,
-      internal_folio: internalFolio,
-      status: 'active',
-    })
-    .select('id, entry_number, internal_folio, created_at')
-    .maybeSingle();
+  let entry:
+    | {
+        id: string;
+        entry_number: string;
+        internal_folio: string;
+        created_at: string;
+      }
+    | null = null;
+  let entryErr: any = null;
+
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const entryNumber = generateEntryNumber(raffle.winning_digits_count ?? 5);
+    const internalFolio = generateFolio(raffle.quarter, entryNumber);
+    const result = await sb
+      .from('entries')
+      .insert({
+        raffle_id: raffle.id,
+        user_id: userId,
+        sale_id: saleRow.id,
+        entry_number: entryNumber,
+        internal_folio: internalFolio,
+        status: 'active',
+      })
+      .select('id, entry_number, internal_folio, created_at')
+      .maybeSingle();
+
+    if (!result.error && result.data) {
+      entry = result.data;
+      break;
+    }
+
+    entryErr = result.error;
+    if ((result.error as any)?.code !== '23505') break;
+  }
 
   if (entryErr || !entry) {
     await audit(sb, 'entry_insert_failed', 'sales', saleRow.id, { err: entryErr?.message }, ctx);
@@ -254,7 +261,7 @@ export async function registerParticipation(
     'registration_success',
     'entries',
     entry.id,
-    { entry_number: entryNumber, raffle_id: raffle.id },
+    { entry_number: entry.entry_number, raffle_id: raffle.id },
     ctx,
     'user',
     userId
@@ -266,16 +273,16 @@ export async function registerParticipation(
     entryId: entry.id,
     email,
     full_name: fullName,
-    entry_number: entryNumber,
-    internal_folio: internalFolio,
+    entry_number: entry.entry_number,
+    internal_folio: entry.internal_folio,
     raffle_name: raffle.name,
     created_at: entry.created_at as string,
   });
 
   return {
     ok: true,
-    entry_number: entryNumber,
-    internal_folio: internalFolio,
+    entry_number: entry.entry_number,
+    internal_folio: entry.internal_folio,
     full_name: fullName,
     email,
     raffle_name: raffle.name,

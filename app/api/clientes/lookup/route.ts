@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { customerLookupSchema } from '@/lib/validators';
 import { rateLimit } from '@/lib/rateLimit';
 import { lookupLocalCustomerByPhone, shouldUseLocalRegistrationStore } from '@/lib/localRegistrationStore';
+import { lookupPostgresCustomerExists, shouldUsePostgresRegistrationStore } from '@/lib/postgresRegistrationStore';
 import {
   clientIp,
   hashForRateLimit,
@@ -51,6 +52,10 @@ export async function POST(req: NextRequest) {
       { ok: false, message: 'Intenta nuevamente más tarde.' },
       { status: 429, retryAfterMs: phoneLimit.retryAfterMs }
     );
+  }
+
+  if (shouldUsePostgresRegistrationStore()) {
+    return secureJson(await lookupPostgresCustomerExists(parsed.data.phone));
   }
 
   if (shouldUseLocalRegistrationStore()) {

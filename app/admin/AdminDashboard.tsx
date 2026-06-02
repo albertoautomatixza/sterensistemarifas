@@ -28,6 +28,15 @@ type RecentEntry = {
   internal_folio: string;
   status: string;
   created_at: string;
+  full_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  birthdate?: string | null;
+  sale_identifier?: string | null;
+  sale_type?: string | null;
+  branch?: string | null;
+  sale_date?: string | null;
+  total_amount?: number | string | null;
 };
 
 export function AdminDashboard() {
@@ -123,7 +132,7 @@ export function AdminDashboard() {
             </div>
             <div className="font-semibold text-slate-900">Ultimos registros</div>
           </div>
-          <div className="text-xs text-slate-500">Mostrando 10</div>
+          <div className="text-xs text-slate-500">Mostrando 50</div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -131,6 +140,11 @@ export function AdminDashboard() {
               <tr className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
                 <th className="px-5 py-3">Numero</th>
                 <th className="px-5 py-3">Folio</th>
+                <th className="px-5 py-3">Cliente</th>
+                <th className="px-5 py-3">Telefono</th>
+                <th className="px-5 py-3">Correo</th>
+                <th className="px-5 py-3">Comprobante</th>
+                <th className="px-5 py-3">Venta</th>
                 <th className="px-5 py-3">Estatus</th>
                 <th className="px-5 py-3">Registrado</th>
               </tr>
@@ -138,7 +152,7 @@ export function AdminDashboard() {
             <tbody>
               {recent.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-slate-400">
+                  <td colSpan={9} className="px-5 py-10 text-center text-slate-400">
                     Aun no hay registros.
                   </td>
                 </tr>
@@ -147,6 +161,24 @@ export function AdminDashboard() {
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="px-5 py-3 font-mono font-semibold text-[#003A5D]">{r.entry_number}</td>
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.internal_folio}</td>
+                  <td className="px-5 py-3 text-slate-700">
+                    <div className="font-medium">{r.full_name ?? '—'}</div>
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      {formatDateOnly(r.birthdate)}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.phone ?? '—'}</td>
+                  <td className="px-5 py-3 text-xs text-slate-600">{r.email ?? '—'}</td>
+                  <td className="px-5 py-3">
+                    <div className="font-mono text-xs text-slate-600">{r.sale_identifier ?? '—'}</div>
+                    <div className="mt-0.5 text-[10px] uppercase tracking-wider text-slate-400">
+                      {r.sale_type ?? ''}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-xs text-slate-600">
+                    <div>{r.branch ?? '—'}</div>
+                    <div className="mt-0.5 text-slate-400">{formatDateOnly(r.sale_date)}</div>
+                  </td>
                   <td className="px-5 py-3">
                     <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
                       {r.status}
@@ -220,4 +252,9 @@ function MiniKpi({
       </div>
     </div>
   );
+}
+
+function formatDateOnly(value?: string | null) {
+  if (!value) return '—';
+  return String(value).slice(0, 10);
 }

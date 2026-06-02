@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { clientIp, hashForRateLimit, safeCompare, secureJson } from '@/lib/security';
 import { rateLimit } from '@/lib/rateLimit';
+import { getLocalAdminStats, shouldUseLocalRegistrationStore } from '@/lib/localRegistrationStore';
+import { getPostgresAdminStats, shouldUsePostgresRegistrationStore } from '@/lib/postgresRegistrationStore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,6 +32,20 @@ export async function GET(req: NextRequest) {
     return secureJson({ ok: false, message: 'No autorizado.' }, { status: 401 });
   }
 
+  if (shouldUsePostgresRegistrationStore()) {
+    return secureJson({
+      ok: true,
+      ...(await getPostgresAdminStats()),
+    });
+  }
+
+  if (shouldUseLocalRegistrationStore()) {
+    return secureJson({
+      ok: true,
+      ...(await getLocalAdminStats()),
+    });
+  }
+
   const sb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -56,7 +72,7 @@ export async function GET(req: NextRequest) {
     .from('entries')
     .select('id, entry_number, internal_folio, status, created_at, user_id')
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(50);
 
   return secureJson({
     ok: true,

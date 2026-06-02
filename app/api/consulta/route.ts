@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { rateLimit } from '@/lib/rateLimit';
 import { lookupLocalParticipation, shouldUseLocalRegistrationStore } from '@/lib/localRegistrationStore';
+import { lookupPostgresParticipation, shouldUsePostgresRegistrationStore } from '@/lib/postgresRegistrationStore';
 import { clientIp, hashForRateLimit, secureJson } from '@/lib/security';
 
 export const runtime = 'nodejs';
@@ -34,6 +35,11 @@ export async function GET(req: NextRequest) {
       { ok: false, message: 'Intenta nuevamente más tarde.' },
       { status: 429, retryAfterMs: folioLimit.retryAfterMs }
     );
+  }
+
+  if (shouldUsePostgresRegistrationStore()) {
+    const result = await lookupPostgresParticipation(folio);
+    return secureJson(result, { status: result.ok ? 200 : 404 });
   }
 
   if (shouldUseLocalRegistrationStore()) {
