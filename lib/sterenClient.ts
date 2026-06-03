@@ -55,13 +55,14 @@ const STEREN_SALES_MAX_PAGES = toSafeNumber(process.env.STEREN_SALES_MAX_PAGES, 
 
 let tokenCache: TokenCache | null = null;
 
-function isLocalPreviewMode() {
-  return process.env.LOCAL_REGISTRATION_STORE === 'true' || !process.env.SUPABASE_SERVICE_ROLE_KEY;
+function shouldSimulateSterenValidation() {
+  if (process.env.STEREN_SIMULATE === 'true') return true;
+  return process.env.NODE_ENV !== 'production' && process.env.LOCAL_REGISTRATION_STORE === 'true';
 }
 
 function resolveSterenBaseUrl(): string | SterenError {
   if (!STEREN_API_URL || !STEREN_API_KEY || !STEREN_API_USERNAME || !STEREN_API_PASSWORD) {
-    return isLocalPreviewMode() ? '' : { kind: 'missing_config' };
+    return shouldSimulateSterenValidation() ? '' : { kind: 'missing_config' };
   }
 
   try {
