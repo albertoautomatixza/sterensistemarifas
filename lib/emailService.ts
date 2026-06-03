@@ -1,3 +1,5 @@
+import nodemailer from 'nodemailer';
+
 type EmailDeliveryStatus = 'pending' | 'sent' | 'failed';
 
 export type RaffleConfirmationEmailParams = {
@@ -18,6 +20,10 @@ export type EmailDeliveryResult = {
 export async function sendRaffleConfirmationEmail(
   params: RaffleConfirmationEmailParams
 ): Promise<EmailDeliveryResult> {
+  if (shouldUseSmtp()) {
+    return sendWithSmtp(params);
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
 
   if (!apiKey) {
@@ -57,6 +63,63 @@ export async function sendRaffleConfirmationEmail(
     return {
       status: 'failed',
       providerResponse: { error: String(err?.message ?? err) },
+      sentAt: null,
+    };
+  }
+}
+
+function shouldUseSmtp() {
+  return process.env.MAIL_PROVIDER === 'smtp' || Boolean(process.env.SMTP_HOST);
+}
+
+async function sendWithSmtp(params: RaffleConfirmationEmailParams): Promise<EmailDeliveryResult> {
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const password = process.env.SMTP_PASSWORD;
+  const port = Number(process.env.SMTP_PORT ?? 587);
+
+  if (!host || !user || !password) {
+    return {
+      status: 'pending',
+      providerResponse: { note: 'SMTP config not complete; email queued only.' },
+      sentAt: null,
+    };
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host,
+      port: Number.isFinite(port) ? port : 587,
+      secure: port === 465,
+      auth: { user, pass: password },
+      connectionTimeout: Number(process.env.EMAIL_TIMEOUT_MS ?? 10_000),
+      greetingTimeout: Number(process.env.EMAIL_TIMEOUT_MS ?? 10_000),
+      socketTimeout: Number(process.env.EMAIL_TIMEOUT_MS ?? 10_000),
+    });
+
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_FROM ?? user,
+      to: params.email,
+      replyTo: process.env.EMAIL_REPLY_TO || undefined,
+      subject: `Tu boleto de participación - ${params.entry_number}`,
+      html: renderRaffleConfirmationHtml(params),
+      text: renderRaffleConfirmationText(params),
+    });
+
+    return {
+      status: 'sent',
+      providerResponse: {
+        provider: 'smtp',
+        messageId: info.messageId,
+        accepted: info.accepted,
+        rejected: info.rejected,
+      },
+      sentAt: new Date().toISOString(),
+    };
+  } catch (err: any) {
+    return {
+      status: 'failed',
+      providerResponse: { provider: 'smtp', error: String(err?.message ?? err) },
       sentAt: null,
     };
   }
