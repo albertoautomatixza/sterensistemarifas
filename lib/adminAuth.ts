@@ -48,7 +48,8 @@ function sign(value: string) {
 }
 
 function verifyPasswordHash(password: string, encodedHash: string) {
-  const [scheme, iterationsText, saltHex, expectedHex] = encodedHash.split('$');
+  const separator = encodedHash.includes('$') ? '$' : ':';
+  const [scheme, iterationsText, saltHex, expectedHex] = encodedHash.split(separator);
   if (scheme !== 'pbkdf2-sha256' || !iterationsText || !saltHex || !expectedHex) {
     return false;
   }
