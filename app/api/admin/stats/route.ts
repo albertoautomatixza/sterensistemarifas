@@ -4,11 +4,14 @@ import { clientIp, hashForRateLimit, safeCompare, secureJson } from '@/lib/secur
 import { rateLimit } from '@/lib/rateLimit';
 import { getLocalAdminStats, shouldUseLocalRegistrationStore } from '@/lib/localRegistrationStore';
 import { getPostgresAdminStats, shouldUsePostgresRegistrationStore } from '@/lib/postgresRegistrationStore';
+import { isAdminSessionRequest } from '@/lib/adminAuth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function isAuthorized(req: NextRequest) {
+  if (isAdminSessionRequest(req)) return true;
+
   const token = process.env.ADMIN_TOKEN;
   if (!token) return false;
 

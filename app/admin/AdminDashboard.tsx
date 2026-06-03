@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   Users,
   Ticket,
@@ -12,6 +12,7 @@ import {
   Loader2,
   ShieldCheck,
   LogIn,
+  LogOut,
 } from 'lucide-react';
 
 type Stats = {
@@ -40,41 +41,73 @@ type RecentEntry = {
 };
 
 export function AdminDashboard() {
-  const [token, setToken] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
 
-  async function load(t: string) {
+  async function load() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/admin/stats', { headers: { 'x-admin-token': t } });
+      const res = await fetch('/api/admin/stats', { credentials: 'same-origin' });
       if (res.status === 401) {
-        setError('Token invalido.');
+        setAuthed(false);
         setLoading(false);
         return;
       }
       const body = await res.json();
       if (!body.ok) {
-        setError('No fue posible cargar las metricas.');
+        setError('No fue posible cargar las métricas.');
       } else {
         setStats(body.stats);
         setRecent(body.recent_entries);
         setAuthed(true);
       }
     } catch {
-      setError('Intenta nuevamente mas tarde.');
+      setError('Intenta nuevamente más tarde.');
     } finally {
       setLoading(false);
     }
   }
 
+  async function login(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const body = await res.json();
+      if (!body.ok) {
+        setError(body.message ?? 'Usuario o contraseña inválidos.');
+        return;
+      }
+      setPassword('');
+      await load();
+    } catch {
+      setError('Intenta nuevamente más tarde.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function logout() {
+    await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+    setAuthed(false);
+    setStats(null);
+    setRecent([]);
+  }
+
   useEffect(() => {
-    // Try loading without token (dev mode if ADMIN_TOKEN is not set)
-    load('');
+    load();
   }, []);
 
   if (!authed) {
@@ -85,36 +118,55 @@ export function AdminDashboard() {
           <div className="font-semibold">Acceso administrativo</div>
         </div>
         <p className="mt-2 text-sm text-slate-600">
-          Ingresa el token operativo para visualizar las metricas.
+          Ingresa tus credenciales para visualizar los registros y métricas del sorteo.
         </p>
-        <div className="mt-6 space-y-3">
+        <form onSubmit={login} className="mt-6 space-y-3">
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Usuario"
+            autoComplete="username"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#00A3E0] focus:ring-brand"
+          />
           <input
             type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Token de acceso"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Contraseña"
+            autoComplete="current-password"
             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#00A3E0] focus:ring-brand"
           />
           <button
-            onClick={() => load(token)}
-            disabled={loading || !token}
+            type="submit"
+            disabled={loading || !username || !password}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#003A5D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#002a45] disabled:opacity-60"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
             Ingresar
           </button>
           {error && <div className="text-sm text-red-600">{error}</div>}
-        </div>
+        </form>
       </div>
     );
   }
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <button
+          onClick={logout}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#003A5D] transition hover:border-[#00A3E0] hover:text-[#00A3E0]"
+        >
+          <LogOut className="h-4 w-4" />
+          Cerrar sesión
+        </button>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <Kpi icon={Users} label="Usuarios registrados" value={stats?.users ?? 0} tone="blue" />
         <Kpi icon={Ticket} label="Participaciones" value={stats?.entries ?? 0} tone="brand" />
-        <Kpi icon={CheckCircle2} label="Ventas validas" value={stats?.valid_sales ?? 0} tone="green" />
+        <Kpi icon={CheckCircle2} label="Ventas válidas" value={stats?.valid_sales ?? 0} tone="green" />
         <Kpi icon={AlertTriangle} label="Intentos duplicados" value={stats?.duplicates ?? 0} tone="amber" />
       </div>
 
@@ -130,7 +182,7 @@ export function AdminDashboard() {
             <div className="text-xs font-semibold uppercase tracking-widest text-[#00A3E0]">
               Actividad reciente
             </div>
-            <div className="font-semibold text-slate-900">Ultimos registros</div>
+            <div className="font-semibold text-slate-900">Últimos registros</div>
           </div>
           <div className="text-xs text-slate-500">Mostrando 50</div>
         </div>
@@ -138,7 +190,7 @@ export function AdminDashboard() {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-                <th className="px-5 py-3">Numero</th>
+                <th className="px-5 py-3">Número</th>
                 <th className="px-5 py-3">Folio</th>
                 <th className="px-5 py-3">Cliente</th>
                 <th className="px-5 py-3">Telefono</th>
@@ -153,7 +205,7 @@ export function AdminDashboard() {
               {recent.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-5 py-10 text-center text-slate-400">
-                    Aun no hay registros.
+                    Aún no hay registros.
                   </td>
                 </tr>
               )}
