@@ -4,6 +4,7 @@ import type { RegistrationPayload } from './validators';
 import type { RegistrationResult } from './types';
 import { validateSaleWithSteren } from './sterenClient';
 import { generateEntryNumber, generateFolio } from './randomEntry';
+import { sendRaffleConfirmationEmail } from './emailService';
 
 type LocalLookupResult =
   | {
@@ -94,6 +95,22 @@ async function initializeSchema() {
     CREATE INDEX IF NOT EXISTS entries_created_at_idx ON entries(created_at DESC);
     CREATE INDEX IF NOT EXISTS entries_user_id_idx ON entries(user_id);
     CREATE INDEX IF NOT EXISTS sales_created_at_idx ON sales(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS email_delivery_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      entry_id TEXT REFERENCES entries(id),
+      email TEXT NOT NULL,
+      template_name TEXT NOT NULL,
+      delivery_status TEXT NOT NULL DEFAULT 'pending' CHECK (delivery_status IN ('pending', 'sent', 'failed', 'bounced')),
+      provider_response JSONB,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS email_delivery_log_user_id_idx ON email_delivery_log(user_id);
+    CREATE INDEX IF NOT EXISTS email_delivery_log_entry_id_idx ON email_delivery_log(entry_id);
+    CREATE INDEX IF NOT EXISTS email_delivery_log_delivery_status_idx ON email_delivery_log(delivery_status);
   `);
 }
 
@@ -219,6 +236,17 @@ export async function registerParticipationPostgres(
     const entry = await insertRandomEntry(client, user.id, sale.id);
     await client.query('COMMIT');
 
+    await sendAndLogPostgresConfirmation({
+      userId: user.id,
+      entryId: entry.id,
+      email: user.email,
+      full_name: user.full_name,
+      entry_number: entry.entry_number,
+      internal_folio: entry.internal_folio,
+      raffle_name: DEFAULT_RAFFLE.name,
+      created_at: toIsoString(entry.created_at),
+    }).catch(() => {});
+
     return {
       ok: true,
       entry_number: entry.entry_number,
@@ -264,6 +292,41 @@ async function insertRandomEntry(client: PoolClient, userId: string, saleId: str
   throw new Error('No fue posible generar un número de participación único.');
 }
 
+async function sendAndLogPostgresConfirmation(params: {
+  userId: string;
+  entryId: string;
+  email: string;
+  full_name: string;
+  entry_number: string;
+  internal_folio: string;
+  raffle_name: string;
+  created_at: string;
+}) {
+  const delivery = await sendRaffleConfirmationEmail({
+    email: params.email,
+    full_name: params.full_name,
+    entry_number: params.entry_number,
+    internal_folio: params.internal_folio,
+    raffle_name: params.raffle_name,
+    created_at: params.created_at,
+  });
+
+  await getPool().query(
+    `INSERT INTO email_delivery_log (
+      id, user_id, entry_id, email, template_name, delivery_status, provider_response, sent_at
+    ) VALUES ($1, $2, $3, $4, 'raffle_confirmation', $5, $6, $7)`,
+    [
+      randomUUID(),
+      params.userId,
+      params.entryId,
+      params.email,
+      delivery.status,
+      JSON.stringify(delivery.providerResponse),
+      delivery.sentAt,
+    ]
+  );
+}
+
 export async function lookupPostgresParticipation(folio: string): Promise<LocalLookupResult> {
   await ensureSchema();
   const result = await getPool().query<{
@@ -298,10 +361,11 @@ function toIsoString(value: Date | string) {
 export async function getPostgresAdminStats() {
   await ensureSchema();
   const db = getPool();
-  const [users, entries, validSales, recent] = await Promise.all([
+  const [users, entries, validSales, emails, recent] = await Promise.all([
     db.query('SELECT COUNT(*)::int AS count FROM users'),
     db.query('SELECT COUNT(*)::int AS count FROM entries'),
     db.query("SELECT COUNT(*)::int AS count FROM sales WHERE validation_status = 'valid'"),
+    db.query('SELECT delivery_status, COUNT(*)::int AS count FROM email_delivery_log GROUP BY delivery_status'),
     db.query(`
       SELECT
         e.id,
@@ -317,14 +381,27 @@ export async function getPostgresAdminStats() {
         s.sale_type,
         s.branch,
         s.sale_date,
-        s.total_amount
+        s.total_amount,
+        em.delivery_status AS email_delivery_status
       FROM entries e
       JOIN users u ON u.id = e.user_id
       JOIN sales s ON s.id = e.sale_id
+      LEFT JOIN LATERAL (
+        SELECT delivery_status
+        FROM email_delivery_log
+        WHERE entry_id = e.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) em ON TRUE
       ORDER BY e.created_at DESC
       LIMIT 50
     `),
   ]);
+
+  const emailCounts = emails.rows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.delivery_status] = row.count;
+    return acc;
+  }, {});
 
   return {
     stats: {
@@ -333,9 +410,9 @@ export async function getPostgresAdminStats() {
       valid_sales: validSales.rows[0]?.count ?? 0,
       duplicates: 0,
       emails: {
-        sent: 0,
-        failed: 0,
-        pending: 0,
+        sent: emailCounts.sent ?? 0,
+        failed: emailCounts.failed ?? 0,
+        pending: emailCounts.pending ?? 0,
       },
     },
     recent_entries: recent.rows,

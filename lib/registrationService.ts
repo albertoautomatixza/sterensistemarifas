@@ -5,6 +5,7 @@ import { validateSaleWithSteren } from './sterenClient';
 import { registerParticipationLocal, shouldUseLocalRegistrationStore } from './localRegistrationStore';
 import { registerParticipationPostgres, shouldUsePostgresRegistrationStore } from './postgresRegistrationStore';
 import { generateEntryNumber, generateFolio } from './randomEntry';
+import { sendRaffleConfirmationEmail } from './emailService';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey =
@@ -303,86 +304,24 @@ async function sendConfirmationEmail(
     created_at: string;
   }
 ) {
-  const apiKey = process.env.RESEND_API_KEY;
+  const delivery = await sendRaffleConfirmationEmail({
+    email: params.email,
+    full_name: params.full_name,
+    entry_number: params.entry_number,
+    internal_folio: params.internal_folio,
+    raffle_name: params.raffle_name,
+    created_at: params.created_at,
+  });
 
-  if (!apiKey) {
-    await sb.from('email_delivery_log').insert({
-      user_id: params.userId,
-      entry_id: params.entryId,
-      email: params.email,
-      template_name: 'raffle_confirmation',
-      delivery_status: 'pending',
-      provider_response: { note: 'RESEND_API_KEY not configured; queued' },
-    });
-    return;
-  }
-
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM ?? 'Rifa <no-reply@rifa.local>',
-        to: params.email,
-        subject: `Tu boleto virtual - ${params.raffle_name}`,
-        html: renderEmailHtml(params),
-      }),
-    });
-    const body = await res.json().catch(() => ({}));
-    await sb.from('email_delivery_log').insert({
-      user_id: params.userId,
-      entry_id: params.entryId,
-      email: params.email,
-      template_name: 'raffle_confirmation',
-      delivery_status: res.ok ? 'sent' : 'failed',
-      provider_response: body,
-      sent_at: res.ok ? new Date().toISOString() : null,
-    });
-  } catch (err: any) {
-    await sb.from('email_delivery_log').insert({
-      user_id: params.userId,
-      entry_id: params.entryId,
-      email: params.email,
-      template_name: 'raffle_confirmation',
-      delivery_status: 'failed',
-      provider_response: { error: String(err?.message ?? err) },
-    });
-  }
-}
-
-function renderEmailHtml(p: {
-  full_name: string;
-  entry_number: string;
-  internal_folio: string;
-  raffle_name: string;
-  created_at: string;
-}) {
-  return `<!doctype html><html><body style="font-family:Arial,sans-serif;background:#F4F6F8;padding:24px;color:#4A4A4A">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
-    <div style="background:#003A5D;color:#fff;padding:24px">
-      <div style="font-size:14px;opacity:.8">Tu boleto virtual</div>
-      <div style="font-size:22px;font-weight:700;margin-top:4px">${escapeHtml(p.raffle_name)}</div>
-    </div>
-    <div style="padding:24px">
-      <p>Hola <strong>${escapeHtml(p.full_name)}</strong>,</p>
-      <p>Gracias por participar. Aqui esta tu boleto virtual:</p>
-      <div style="border:2px dashed #00A3E0;border-radius:12px;padding:20px;text-align:center;margin:16px 0">
-        <div style="font-size:12px;color:#6b7280;letter-spacing:2px">NUMERO DE PARTICIPACION</div>
-        <div style="font-size:40px;font-weight:800;color:#003A5D;letter-spacing:6px;margin-top:6px">${escapeHtml(p.entry_number)}</div>
-        <div style="font-size:12px;color:#6b7280;margin-top:12px">Folio: ${escapeHtml(p.internal_folio)}</div>
-      </div>
-      <p style="font-size:14px">Conserva este correo como comprobante. El sorteo se realizara con base en los resultados oficiales de Loteria Nacional.</p>
-    </div>
-  </div></body></html>`;
-}
-
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
-  );
+  await sb.from('email_delivery_log').insert({
+    user_id: params.userId,
+    entry_id: params.entryId,
+    email: params.email,
+    template_name: 'raffle_confirmation',
+    delivery_status: delivery.status,
+    provider_response: delivery.providerResponse,
+    sent_at: delivery.sentAt,
+  });
 }
 
 function hashPhone(p: string) {

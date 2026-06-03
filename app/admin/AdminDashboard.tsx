@@ -38,6 +38,7 @@ type RecentEntry = {
   branch?: string | null;
   sale_date?: string | null;
   total_amount?: number | string | null;
+  email_delivery_status?: string | null;
 };
 
 export function AdminDashboard() {
@@ -220,7 +221,14 @@ export function AdminDashboard() {
                     </div>
                   </td>
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.phone ?? '—'}</td>
-                  <td className="px-5 py-3 text-xs text-slate-600">{r.email ?? '—'}</td>
+                  <td className="px-5 py-3 text-xs text-slate-600">
+                    <div>{r.email ?? '—'}</div>
+                    {r.email_delivery_status && (
+                      <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${emailStatusTone(r.email_delivery_status)}`}>
+                        {emailStatusLabel(r.email_delivery_status)}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-5 py-3">
                     <div className="font-mono text-xs text-slate-600">{r.sale_identifier ?? '—'}</div>
                     <div className="mt-0.5 text-[10px] uppercase tracking-wider text-slate-400">
@@ -309,4 +317,24 @@ function MiniKpi({
 function formatDateOnly(value?: string | null) {
   if (!value) return '—';
   return String(value).slice(0, 10);
+}
+
+function emailStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    sent: 'Correo enviado',
+    failed: 'Correo fallido',
+    pending: 'Correo pendiente',
+    bounced: 'Correo rechazado',
+  };
+  return labels[value] ?? value;
+}
+
+function emailStatusTone(value: string) {
+  const tones: Record<string, string> = {
+    sent: 'bg-emerald-100 text-emerald-700',
+    failed: 'bg-red-100 text-red-700',
+    pending: 'bg-amber-100 text-amber-700',
+    bounced: 'bg-red-100 text-red-700',
+  };
+  return tones[value] ?? 'bg-slate-100 text-slate-600';
 }
