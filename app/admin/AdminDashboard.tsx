@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   LogIn,
   LogOut,
+  Send,
 } from 'lucide-react';
 
 type Stats = {
@@ -49,6 +50,9 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
+  const [testEmail, setTestEmail] = useState('');
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [testEmailMessage, setTestEmailMessage] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -105,6 +109,31 @@ export function AdminDashboard() {
     setAuthed(false);
     setStats(null);
     setRecent([]);
+  }
+
+  async function sendTestEmail(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setTestEmailLoading(true);
+    setTestEmailMessage(null);
+    try {
+      const res = await fetch('/api/admin/test-email', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: testEmail }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (body.ok) {
+        setTestEmailMessage('Correo de prueba enviado. Revisa bandeja de entrada y spam.');
+      } else {
+        const detail = body?.provider_response?.error ? ` ${body.provider_response.error}` : '';
+        setTestEmailMessage(`${body?.message ?? 'Correo fallido.'}${detail}`);
+      }
+    } catch {
+      setTestEmailMessage('No fue posible probar el correo.');
+    } finally {
+      setTestEmailLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -176,6 +205,42 @@ export function AdminDashboard() {
         <MiniKpi icon={MailWarning} label="Correos pendientes" value={stats?.emails.pending ?? 0} tone="amber" />
         <MiniKpi icon={MailX} label="Correos fallidos" value={stats?.emails.failed ?? 0} tone="red" />
       </div>
+
+      <form
+        onSubmit={sendTestEmail}
+        className="rounded-2xl border border-slate-200 bg-white p-5"
+      >
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold uppercase tracking-widest text-[#00A3E0]">
+              Prueba de correo
+            </div>
+            <label className="mt-2 block text-sm font-medium text-slate-700">
+              Enviar boleto de prueba a
+            </label>
+            <input
+              type="email"
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="correo@ejemplo.com"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#00A3E0] focus:ring-brand"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={testEmailLoading || !testEmail}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#003A5D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#002a45] disabled:opacity-60"
+          >
+            {testEmailLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Enviar prueba
+          </button>
+        </div>
+        {testEmailMessage && (
+          <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            {testEmailMessage}
+          </div>
+        )}
+      </form>
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
         <div className="flex items-center justify-between border-b border-slate-100 p-5">
