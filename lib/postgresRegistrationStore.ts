@@ -135,6 +135,13 @@ export async function registerParticipationPostgres(
   await ensureSchema();
 
   const saleIdentifier = input.sale_identifier.trim().toUpperCase();
+  const existingSaleBeforeValidation = await getPool().query(
+    'SELECT id FROM sales WHERE UPPER(sale_identifier) = $1 LIMIT 1',
+    [saleIdentifier]
+  );
+  if ((existingSaleBeforeValidation.rowCount ?? 0) > 0) {
+    return { ok: false, error_code: 'DUPLICATE_SALE', message: 'Esta venta ya fue registrada.' };
+  }
 
   const validation = await validateSaleWithSteren(saleIdentifier, input.sale_type);
   if ('kind' in validation) {
