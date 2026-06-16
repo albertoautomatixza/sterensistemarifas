@@ -159,18 +159,30 @@ export async function registerParticipation(
   const validation = await validateSaleWithSteren(input.sale_identifier, input.sale_type);
 
   if ('kind' in validation) {
+    console.error('steren_validation_unavailable', {
+      kind: validation.kind,
+      status: 'status' in validation ? validation.status : undefined,
+      message: 'message' in validation ? validation.message : undefined,
+      sale_type: input.sale_type,
+      sale_identifier_length: input.sale_identifier.length,
+    });
     await audit(
       sb,
       'steren_integration_error',
       'sales',
       null,
-      { kind: validation.kind, sale_identifier: input.sale_identifier },
+      {
+        kind: validation.kind,
+        status: 'status' in validation ? validation.status : undefined,
+        message: 'message' in validation ? validation.message : undefined,
+        sale_identifier: input.sale_identifier,
+      },
       ctx
     );
     return {
       ok: false,
       error_code: 'SERVICE_UNAVAILABLE',
-      message: 'Intenta nuevamente mas tarde.',
+      message: 'No fue posible conectar con Steren en este momento. Intenta nuevamente en unos minutos.',
     };
   }
 

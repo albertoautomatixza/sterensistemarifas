@@ -145,10 +145,17 @@ export async function registerParticipationPostgres(
 
   const validation = await validateSaleWithSteren(saleIdentifier, input.sale_type);
   if ('kind' in validation) {
+    console.error('steren_validation_unavailable', {
+      kind: validation.kind,
+      status: 'status' in validation ? validation.status : undefined,
+      message: 'message' in validation ? validation.message : undefined,
+      sale_type: input.sale_type,
+      sale_identifier_length: saleIdentifier.length,
+    });
     return {
       ok: false,
       error_code: 'SERVICE_UNAVAILABLE',
-      message: 'Intenta nuevamente más tarde.',
+      message: 'No fue posible conectar con Steren en este momento. Intenta nuevamente en unos minutos.',
     };
   }
 

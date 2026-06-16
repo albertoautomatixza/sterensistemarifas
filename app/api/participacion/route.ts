@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   const ipLimit = rateLimit(`reg:ip:${hashForRateLimit(ip)}`, { limit: 8, windowMs: 60_000 });
   if (!ipLimit.ok) {
     return secureJson(
-      { ok: false, error_code: 'RATE_LIMITED', message: 'Intenta nuevamente más tarde.' },
+      { ok: false, error_code: 'RATE_LIMITED', message: 'Demasiados intentos. Espera un minuto e intenta nuevamente.' },
       { status: 429, retryAfterMs: ipLimit.retryAfterMs }
     );
   }
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   });
   if (!phoneLimit.ok) {
     return secureJson(
-      { ok: false, error_code: 'RATE_LIMITED', message: 'Intenta nuevamente más tarde.' },
+      { ok: false, error_code: 'RATE_LIMITED', message: 'Demasiados intentos con este teléfono. Espera un minuto e intenta nuevamente.' },
       { status: 429, retryAfterMs: phoneLimit.retryAfterMs }
     );
   }
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   });
   if (!saleLimit.ok) {
     return secureJson(
-      { ok: false, error_code: 'RATE_LIMITED', message: 'Intenta nuevamente más tarde.' },
+      { ok: false, error_code: 'RATE_LIMITED', message: 'Demasiados intentos con este ticket. Espera un minuto e intenta nuevamente.' },
       { status: 429, retryAfterMs: saleLimit.retryAfterMs }
     );
   }

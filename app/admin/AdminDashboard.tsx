@@ -14,6 +14,7 @@ import {
   LogIn,
   LogOut,
   Send,
+  Search,
 } from 'lucide-react';
 
 type Stats = {
@@ -53,6 +54,10 @@ export function AdminDashboard() {
   const [testEmail, setTestEmail] = useState('');
   const [testEmailLoading, setTestEmailLoading] = useState(false);
   const [testEmailMessage, setTestEmailMessage] = useState<string | null>(null);
+  const [sterenIdentifier, setSterenIdentifier] = useState('');
+  const [sterenType, setSterenType] = useState<'ticket' | 'factura'>('ticket');
+  const [sterenLoading, setSterenLoading] = useState(false);
+  const [sterenDiagnostic, setSterenDiagnostic] = useState<any | null>(null);
 
   async function load() {
     setLoading(true);
@@ -133,6 +138,29 @@ export function AdminDashboard() {
       setTestEmailMessage('No fue posible probar el correo.');
     } finally {
       setTestEmailLoading(false);
+    }
+  }
+
+  async function runSterenDiagnostic(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSterenLoading(true);
+    setSterenDiagnostic(null);
+    try {
+      const res = await fetch('/api/admin/steren-diagnostic', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sale_identifier: sterenIdentifier || undefined,
+          sale_type: sterenType,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      setSterenDiagnostic(body?.diagnostic ?? { ok: false, message: body?.message ?? 'Diagnóstico fallido.' });
+    } catch {
+      setSterenDiagnostic({ ok: false, message: 'No fue posible ejecutar el diagnóstico.' });
+    } finally {
+      setSterenLoading(false);
     }
   }
 
@@ -242,6 +270,53 @@ export function AdminDashboard() {
         )}
       </form>
 
+      <form
+        onSubmit={runSterenDiagnostic}
+        className="rounded-2xl border border-slate-200 bg-white p-5"
+      >
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold uppercase tracking-widest text-[#00A3E0]">
+              Diagnóstico Steren
+            </div>
+            <label className="mt-2 block text-sm font-medium text-slate-700">
+              Probar conexión o validar ticket sin registrar
+            </label>
+            <div className="mt-2 grid gap-2 md:grid-cols-[150px_1fr]">
+              <select
+                value={sterenType}
+                onChange={(e) => setSterenType(e.target.value as 'ticket' | 'factura')}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#00A3E0] focus:ring-brand"
+              >
+                <option value="ticket">Ticket</option>
+                <option value="factura">Factura</option>
+              </select>
+              <input
+                type="text"
+                value={sterenIdentifier}
+                onChange={(e) => setSterenIdentifier(e.target.value)}
+                placeholder="Ej. 6500000099885"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono text-sm uppercase outline-none focus:border-[#00A3E0] focus:ring-brand"
+              />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Sin identificador solo prueba login y StoreGroups. Con identificador busca la venta en Steren sin guardarla.
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={sterenLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#003A5D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#002a45] disabled:opacity-60"
+          >
+            {sterenLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            Probar Steren
+          </button>
+        </div>
+        {sterenDiagnostic && (
+          <DiagnosticResult result={sterenDiagnostic} />
+        )}
+      </form>
+
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
         <div className="flex items-center justify-between border-b border-slate-100 p-5">
           <div>
@@ -318,6 +393,60 @@ export function AdminDashboard() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function DiagnosticResult({ result }: { result: any }) {
+  const ok = Boolean(result?.ok);
+  const validation = result?.validation;
+  const error = result?.error;
+
+  return (
+    <div
+      className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+        ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-700'
+      }`}
+    >
+      <div className="font-semibold">
+        {ok ? 'Conexión con Steren correcta' : 'Falla en conexión con Steren'}
+      </div>
+      {result?.stage && <div className="mt-1">Etapa: {result.stage}</div>}
+      {error && (
+        <div className="mt-1">
+          Error: {error.kind}
+          {error.status ? ` (${error.status})` : ''}
+          {error.message ? ` - ${error.message}` : ''}
+        </div>
+      )}
+      {result?.message && <div className="mt-1">{result.message}</div>}
+      {result?.range_checked && (
+        <div className="mt-1">
+          Rango revisado: {result.range_checked.startDate} a {result.range_checked.endDate}
+        </div>
+      )}
+      {result?.first_page && (
+        <div className="mt-1">
+          Primera página: {result.first_page.orders} ventas en {result.first_page.date_groups} grupos de fecha.
+        </div>
+      )}
+      {validation && (
+        <div className="mt-2 rounded-lg bg-white/70 p-3 text-slate-700">
+          {validation.status === 'valid' ? (
+            <>
+              <div className="font-semibold text-emerald-700">Venta encontrada en Steren</div>
+              <div>Fecha: {validation.sale_date ?? '—'}</div>
+              <div>Sucursal: {validation.branch ?? '—'}</div>
+              <div>Total: {validation.total_amount ?? '—'}</div>
+            </>
+          ) : (
+            <>
+              <div className="font-semibold text-amber-700">Venta no encontrada en Steren</div>
+              <div>Motivo: {validation.reason ?? 'not_found'}</div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

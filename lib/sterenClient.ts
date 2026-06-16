@@ -18,7 +18,7 @@ export type SterenError =
   | { kind: 'network' }
   | { kind: 'missing_config' }
   | { kind: 'unsafe_config' }
-  | { kind: 'upstream_error'; status: number };
+  | { kind: 'upstream_error'; status: number; message?: string };
 
 type TokenCache = {
   token: string;
@@ -47,7 +47,7 @@ const STEREN_API_KEY = process.env.STEREN_API_KEY;
 const STEREN_API_USERNAME = process.env.STEREN_API_USERNAME ?? process.env.STEREN_API_USER;
 const STEREN_API_PASSWORD = process.env.STEREN_API_PASSWORD;
 const STEREN_LOGIN_PATH = process.env.STEREN_LOGIN_PATH ?? '/api/Login';
-const STEREN_STORE_GROUPS_PATH = process.env.STEREN_STORE_GROUPS_PATH ?? '/api/storegroups';
+const STEREN_STORE_GROUPS_PATH = process.env.STEREN_STORE_GROUPS_PATH ?? '/api/StoreGroups';
 const STEREN_TIMEOUT_MS = toSafeNumber(process.env.STEREN_TIMEOUT_MS, 30_000, 3_000, 60_000);
 const STEREN_SALES_LOOKBACK_DAYS = toSafeNumber(process.env.STEREN_SALES_LOOKBACK_DAYS, 31, 1, 31);
 const STEREN_SALES_PAGE_SIZE = toSafeNumber(process.env.STEREN_SALES_PAGE_SIZE, 500, 1, 1000);
@@ -116,6 +116,12 @@ async function readJson(res: Response) {
   return res.json().catch(() => ({}));
 }
 
+function errorMessageFromBody(body: unknown) {
+  const value = body as any;
+  const message = value?.message ?? value?.razon ?? value?.error ?? value?.exception;
+  return typeof message === 'string' ? message.slice(0, 500) : undefined;
+}
+
 function decodeJwtExpiration(token: string) {
   try {
     const payload = token.split('.')[1];
@@ -153,7 +159,7 @@ async function getSterenToken(baseUrl: string, forceRefresh = false): Promise<st
 
     const body = await readJson(res);
     if (!res.ok || body?.success === false || typeof body?.token !== 'string') {
-      return { kind: 'upstream_error', status: res.status };
+      return { kind: 'upstream_error', status: res.status, message: errorMessageFromBody(body) };
     }
 
     tokenCache = {
@@ -195,18 +201,129 @@ async function getStoreGroupsPage(
       STEREN_TIMEOUT_MS
     );
 
-    if (res.status === 401) return { retryWithFreshToken: true };
-    if (!res.ok) return { kind: 'upstream_error', status: res.status };
-
     const body = await readJson(res);
+    if (res.status === 401) return { retryWithFreshToken: true };
+    if (!res.ok) return { kind: 'upstream_error', status: res.status, message: errorMessageFromBody(body) };
+
     if (body?.success === false && body?.message) {
-      return { kind: 'upstream_error', status: res.status };
+      return { kind: 'upstream_error', status: res.status, message: errorMessageFromBody(body) };
     }
 
     return body;
   } catch (err: any) {
     return err?.name === 'AbortError' ? { kind: 'timeout' } : { kind: 'network' };
   }
+}
+
+export async function diagnoseSterenConnection(input?: {
+  saleIdentifier?: string;
+  saleType?: 'ticket' | 'factura';
+}) {
+  const baseUrl = resolveSterenBaseUrl();
+  if (baseUrl === '') {
+    return {
+      ok: false as const,
+      stage: 'config',
+      message: 'La validación de Steren está en modo simulación local.',
+    };
+  }
+  if (typeof baseUrl !== 'string') {
+    return { ok: false as const, stage: 'config', error: baseUrl };
+  }
+
+  const token = await getSterenToken(baseUrl, true);
+  if (typeof token !== 'string') {
+    return { ok: false as const, stage: 'login', error: token };
+  }
+
+  const ranges = getSalesRanges();
+  const firstRange = ranges[0];
+  if (!firstRange) {
+    return {
+      ok: false as const,
+      stage: 'range',
+      message: 'No hay un rango válido de fechas para consultar Steren.',
+    };
+  }
+
+  let page = await getStoreGroupsPage(baseUrl, token, firstRange, 1);
+  if (isRetryTokenSignal(page)) {
+    const freshToken = await getSterenToken(baseUrl, true);
+    if (typeof freshToken !== 'string') {
+      return { ok: false as const, stage: 'login-refresh', error: freshToken };
+    }
+    page = await getStoreGroupsPage(baseUrl, freshToken, firstRange, 1);
+  }
+
+  if (isSterenError(page)) {
+    return {
+      ok: false as const,
+      stage: 'storegroups',
+      error: page,
+      range_checked: firstRange,
+    };
+  }
+
+  const firstPageSummary = summarizeStoreGroups(page);
+  const saleIdentifier = input?.saleIdentifier?.trim();
+  if (!saleIdentifier) {
+    return {
+      ok: true as const,
+      login: true,
+      storegroups: true,
+      range_checked: firstRange,
+      first_page: firstPageSummary,
+    };
+  }
+
+  const validation = await validateSaleWithSteren(saleIdentifier, input?.saleType ?? 'ticket');
+  if (isSterenError(validation)) {
+    return {
+      ok: false as const,
+      stage: 'validation',
+      error: validation,
+      range_checked: firstRange,
+      first_page: firstPageSummary,
+    };
+  }
+
+  return {
+    ok: true as const,
+    login: true,
+    storegroups: true,
+    range_checked: firstRange,
+    first_page: firstPageSummary,
+    validation: validation.valid
+      ? {
+          status: 'valid',
+          branch: validation.branch,
+          sale_date: validation.sale_date,
+          total_amount: validation.total_amount,
+          steren_internal_identifier: validation.steren_internal_identifier,
+        }
+      : {
+          status: 'not_found',
+          reason: validation.reason,
+        },
+  };
+}
+
+function summarizeStoreGroups(body: unknown) {
+  const dateGroups = getDateGroups(body);
+  const orderCount = dateGroups.reduce((count, dateGroup) => {
+    return (
+      count +
+      getArray(dateGroup?.store).reduce((storeCount, store) => {
+        return storeCount + getArray(store?.pedido).length;
+      }, 0)
+    );
+  }, 0);
+
+  return {
+    date_groups: dateGroups.length,
+    orders: orderCount,
+    likely_last_page: isProbablyLastPage(body),
+  };
 }
 
 export async function validateSaleWithSteren(
