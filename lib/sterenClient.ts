@@ -30,7 +30,7 @@ type StoreGroupsRange = {
   endDate: string;
 };
 
-type StoreGroupsAuthMode = 'bearer' | 'api_key';
+type StoreGroupsAuthMode = 'bearer' | 'api_key' | 'api_key_header';
 
 type SaleMatch = {
   matchedBy: 'pedido' | 'factura';
@@ -208,6 +208,9 @@ async function getStoreGroupsPageWithAuth(
   if (authMode === 'bearer') {
     headers.Authorization = `Bearer ${token}`;
   }
+  if (authMode === 'api_key_header') {
+    headers['x-api-key'] = STEREN_API_KEY!;
+  }
 
   try {
     const res = await callWithTimeout(
@@ -230,6 +233,13 @@ async function getStoreGroupsPageWithAuth(
         });
         return getStoreGroupsPageWithAuth(baseUrl, token, range, pageNumber, 'api_key');
       }
+      if (authMode === 'api_key' && shouldRetryStoreGroupsWithHeaderApiKey(error)) {
+        console.warn('steren_storegroups_retry_with_header_api_key', {
+          status: error.status,
+          message: error.message,
+        });
+        return getStoreGroupsPageWithAuth(baseUrl, token, range, pageNumber, 'api_key_header');
+      }
       return error;
     }
 
@@ -241,6 +251,13 @@ async function getStoreGroupsPageWithAuth(
           message: error.message,
         });
         return getStoreGroupsPageWithAuth(baseUrl, token, range, pageNumber, 'api_key');
+      }
+      if (authMode === 'api_key' && shouldRetryStoreGroupsWithHeaderApiKey(error)) {
+        console.warn('steren_storegroups_retry_with_header_api_key', {
+          status: error.status,
+          message: error.message,
+        });
+        return getStoreGroupsPageWithAuth(baseUrl, token, range, pageNumber, 'api_key_header');
       }
       return error;
     }
@@ -629,7 +646,10 @@ function toSafeNumber(value: string | undefined, fallback: number, min: number, 
 }
 
 function normalizeStoreGroupsAuthMode(value: string | undefined): StoreGroupsAuthMode {
-  return value?.toLowerCase() === 'api_key' ? 'api_key' : 'bearer';
+  const normalized = value?.toLowerCase();
+  if (normalized === 'api_key_header' || normalized === 'x_api_key') return 'api_key_header';
+  if (normalized === 'api_key') return 'api_key';
+  return 'bearer';
 }
 
 function shouldRetryStoreGroupsWithoutBearer(error: SterenError) {
@@ -638,6 +658,15 @@ function shouldRetryStoreGroupsWithoutBearer(error: SterenError) {
     error.status === 403 &&
     typeof error.message === 'string' &&
     error.message.includes('Invalid key=value pair')
+  );
+}
+
+function shouldRetryStoreGroupsWithHeaderApiKey(error: SterenError) {
+  return (
+    error.kind === 'upstream_error' &&
+    error.status === 403 &&
+    typeof error.message === 'string' &&
+    error.message.includes('Missing Authentication Token')
   );
 }
 
