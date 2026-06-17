@@ -30,6 +30,8 @@ type StoreGroupsRange = {
   endDate: string;
 };
 
+type StoreGroupsAuthMode = 'bearer' | 'api_key';
+
 type SaleMatch = {
   matchedBy: 'pedido' | 'factura';
   store: string | null;
@@ -48,6 +50,8 @@ const STEREN_API_USERNAME = process.env.STEREN_API_USERNAME ?? process.env.STERE
 const STEREN_API_PASSWORD = process.env.STEREN_API_PASSWORD;
 const STEREN_LOGIN_PATH = process.env.STEREN_LOGIN_PATH ?? '/api/Login';
 const STEREN_STORE_GROUPS_PATH = process.env.STEREN_STORE_GROUPS_PATH ?? '/api/StoreGroups';
+const STEREN_STORE_GROUPS_AUTH_MODE = normalizeStoreGroupsAuthMode(process.env.STEREN_STORE_GROUPS_AUTH_MODE);
+const STEREN_API_TIMEZONE = process.env.STEREN_API_TIMEZONE || 'America/Mexico_City';
 const STEREN_TIMEOUT_MS = toSafeNumber(process.env.STEREN_TIMEOUT_MS, 30_000, 3_000, 60_000);
 const STEREN_SALES_LOOKBACK_DAYS = toSafeNumber(process.env.STEREN_SALES_LOOKBACK_DAYS, 31, 1, 31);
 const STEREN_SALES_PAGE_SIZE = toSafeNumber(process.env.STEREN_SALES_PAGE_SIZE, 500, 1, 1000);
@@ -179,6 +183,16 @@ async function getStoreGroupsPage(
   range: StoreGroupsRange,
   pageNumber: number
 ): Promise<unknown | SterenError | { retryWithFreshToken: true }> {
+  return getStoreGroupsPageWithAuth(baseUrl, token, range, pageNumber, STEREN_STORE_GROUPS_AUTH_MODE);
+}
+
+async function getStoreGroupsPageWithAuth(
+  baseUrl: string,
+  token: string,
+  range: StoreGroupsRange,
+  pageNumber: number,
+  authMode: StoreGroupsAuthMode
+): Promise<unknown | SterenError | { retryWithFreshToken: true }> {
   const params = new URLSearchParams({
     ApiKey: STEREN_API_KEY!,
     startDate: range.startDate,
@@ -187,26 +201,48 @@ async function getStoreGroupsPage(
     pageNumber: String(pageNumber),
   });
 
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Cache-Control': 'no-store',
+  };
+  if (authMode === 'bearer') {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   try {
     const res = await callWithTimeout(
       `${endpoint(baseUrl, STEREN_STORE_GROUPS_PATH)}?${params.toString()}`,
       {
         method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-          'Cache-Control': 'no-store',
-        },
+        headers,
       },
       STEREN_TIMEOUT_MS
     );
 
     const body = await readJson(res);
     if (res.status === 401) return { retryWithFreshToken: true };
-    if (!res.ok) return { kind: 'upstream_error', status: res.status, message: errorMessageFromBody(body) };
+    if (!res.ok) {
+      const error = { kind: 'upstream_error' as const, status: res.status, message: errorMessageFromBody(body) };
+      if (authMode === 'bearer' && shouldRetryStoreGroupsWithoutBearer(error)) {
+        console.warn('steren_storegroups_retry_without_bearer', {
+          status: error.status,
+          message: error.message,
+        });
+        return getStoreGroupsPageWithAuth(baseUrl, token, range, pageNumber, 'api_key');
+      }
+      return error;
+    }
 
     if (body?.success === false && body?.message) {
-      return { kind: 'upstream_error', status: res.status, message: errorMessageFromBody(body) };
+      const error = { kind: 'upstream_error' as const, status: res.status, message: errorMessageFromBody(body) };
+      if (authMode === 'bearer' && shouldRetryStoreGroupsWithoutBearer(error)) {
+        console.warn('steren_storegroups_retry_without_bearer', {
+          status: error.status,
+          message: error.message,
+        });
+        return getStoreGroupsPageWithAuth(baseUrl, token, range, pageNumber, 'api_key');
+      }
+      return error;
     }
 
     return body;
@@ -443,14 +479,14 @@ function isProbablyLastPage(body: unknown) {
 }
 
 function getSalesRanges(): StoreGroupsRange[] {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
+  const latestAllowedDate = todayInApiTimezone();
+  latestAllowedDate.setDate(latestAllowedDate.getDate() - 1);
 
   const explicitStart = parseApiDate(process.env.STEREN_SALES_START_DATE);
   const explicitEnd = parseApiDate(process.env.STEREN_SALES_END_DATE);
 
-  let end = explicitEnd ?? yesterday;
-  if (end > yesterday) end = yesterday;
+  let end = explicitEnd ?? latestAllowedDate;
+  if (end > latestAllowedDate) end = latestAllowedDate;
 
   let start = explicitStart;
   if (!start) {
@@ -481,6 +517,27 @@ function getSalesRanges(): StoreGroupsRange[] {
   }
 
   return ranges.reverse();
+}
+
+function todayInApiTimezone() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: STEREN_API_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const year = Number(parts.find((part) => part.type === 'year')?.value);
+    const month = Number(parts.find((part) => part.type === 'month')?.value);
+    const day = Number(parts.find((part) => part.type === 'day')?.value);
+    if (Number.isInteger(year) && Number.isInteger(month) && Number.isInteger(day)) {
+      return new Date(year, month - 1, day);
+    }
+  } catch {
+    // Fall back to server local date below.
+  }
+  const serverDate = new Date();
+  return new Date(serverDate.getFullYear(), serverDate.getMonth(), serverDate.getDate());
 }
 
 function formatApiDate(date: Date) {
@@ -569,6 +626,19 @@ function toSafeNumber(value: string | undefined, fallback: number, min: number, 
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function normalizeStoreGroupsAuthMode(value: string | undefined): StoreGroupsAuthMode {
+  return value?.toLowerCase() === 'api_key' ? 'api_key' : 'bearer';
+}
+
+function shouldRetryStoreGroupsWithoutBearer(error: SterenError) {
+  return (
+    error.kind === 'upstream_error' &&
+    error.status === 403 &&
+    typeof error.message === 'string' &&
+    error.message.includes('Invalid key=value pair')
+  );
 }
 
 function isSterenError(value: unknown): value is SterenError {
